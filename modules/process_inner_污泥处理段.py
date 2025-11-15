@@ -1,0 +1,337 @@
+# -*- coding: utf-8 -*-
+"""
+厂内-污泥处理段相关接口
+- 污泥处理段碳排信息       /api/process/inner/污泥处理/info          (GET)
+- 污泥处理段碳排趋势       /api/process/inner/污泥处理/trend         (POST)
+- 污泥处理段碳排占比       /api/process/inner/污泥处理/share         (GET)
+
+Excel：data/范围2_水厂内外_分段与单元.xlsx
+sheet：
+  - 水厂内_分段   => 按工艺段汇总（本段没用到，可按需扩展）
+  - 水厂内_分单元 => 按工艺单元汇总（info / trend / share 都用它）
+"""
+
+import os
+from typing import Optional, Dict, Any
+
+import pandas as pd
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
+
+router = APIRouter()
+
+
+# ========= 入参模型 =========
+
+class TrendBody(BaseModel):
+    # 1=回收水池, 2=污泥调节池, 3=污泥浓缩池, 4=污泥泵房, 5=污泥PAM投加间、脱水间
+    qtype: int
+    # 1=日，2=周、3=月、4=年
+    timeType: int
+
+
+# ========= 全局缓存 =========
+
+_UNIT_TABLE: Optional[pd.DataFrame] = None      # 水厂内_分单元
+
+EXCEL_PATH = os.path.join("data", "范围2_水厂内外_分段与单元.xlsx")
+
+# timeType -> “日/周/月/年”
+TIME_MAP: Dict[int, str] = {
+    1: "日",
+    2: "周",
+    3: "月",
+    4: "年",
+}
+
+# timeType -> 合计列名
+TIME_COL_MAP: Dict[int, str] = {
+    1: "合计_日",
+    2: "合计_周",
+    3: "合计_月",
+    4: "合计_年",
+}
+
+
+# ========= 读表工具函数 =========
+
+def load_unit_table() -> pd.DataFrame:
+    """读取 sheet《水厂内_分单元》（仅加载一次，后续使用缓存）"""
+    global _UNIT_TABLE
+    if _UNIT_TABLE is not None:
+        return _UNIT_TABLE
+
+    try:
+        df = pd.read_excel(EXCEL_PATH, sheet_name="水厂内_分单元")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Excel(水厂内_分单元)加载失败: {e}")
+
+    if "工艺段" not in df.columns or "工艺单元" not in df.columns:
+        raise HTTPException(status_code=500, detail="水厂内_分单元 缺少字段：工艺段/工艺单元")
+
+    # 把合计/电耗/药耗/段内占比的日周月年列全部转成 float
+    for prefix in ["合计", "电耗", "药耗", "段内占比"]:
+        for suff in ["日", "周", "月", "年"]:
+            col = f"{prefix}_{suff}"
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+
+    _UNIT_TABLE = df
+    return df
+
+
+# ========= 公共小函数 =========
+
+def _period_suffix(time_type: int) -> str:
+    """timeType -> ‘日/周/月/年’ 后缀"""
+    if time_type not in TIME_MAP:
+        raise HTTPException(status_code=400, detail="timeType 只能是 1(日)/2(周)/3(月)/4(年)")
+    return TIME_MAP[time_type]
+
+
+def _select_sludge_units() -> pd.DataFrame:
+    """从《水厂内_分单元》中筛选污泥处理段的所有单元"""
+    df = load_unit_table()
+    sludge = df[df["工艺段"] == "污泥处理段"].copy()
+    if sludge.empty:
+        raise HTTPException(status_code=500, detail="未在水厂内_分单元中找到“污泥处理段”记录")
+    return sludge
+
+
+# ========= 1) 厂内-污泥处理段-碳排信息 =========
+
+@router.get("/api/process/inner/污泥处理/info")
+def sludge_info(
+    timeType: int = Query(
+        4, description="1=日, 2=周, 3=月, 4=年（默认按年）"
+    )
+) -> Dict[str, Any]:
+    """
+    污泥处理段碳排信息（数据来源：水厂内_分单元）：
+    - totalCarbonEmissions:
+        工艺段 = 污泥处理段 的所有单元，在合计_日/周/月/年中的合计
+    - recycledWaterTankCE:
+        工艺单元包含 “回收水池” 的合计
+    - sludgeConditioningTankCE:
+        工艺单元包含 “污泥调节池” 的合计
+    - sludgeThickeningTankCE:
+        工艺单元包含 “污泥浓缩池” 的合计
+    - sludgePumpHouseCE:
+        工艺单元包含 “污泥泵房” 的合计
+    - pamRoomDewateringRoomCE:
+        工艺单元名称中包含 “PAM” 的所有行合计
+          （如“PAM投加泵楼/脱水”、“污泥PAM投加间、脱水间”等）
+    """
+    if timeType not in TIME_COL_MAP:
+        raise HTTPException(status_code=400, detail="timeType 只能是 1(日)/2(周)/3(月)/4(年)")
+
+    df = _select_sludge_units()
+    col = TIME_COL_MAP[timeType]
+
+    # 段总碳排
+    total = float(df[col].sum())
+
+    recycled = df[df["工艺单元"].astype(str).str.contains("回收水池")]
+    recycled_ce = float(recycled[col].sum())
+
+    cond = df[df["工艺单元"].astype(str).str.contains("污泥调节池")]
+    cond_ce = float(cond[col].sum())
+
+    thick = df[df["工艺单元"].astype(str).str.contains("污泥浓缩池")]
+    thick_ce = float(thick[col].sum())
+
+    pump = df[df["工艺单元"].astype(str).str.contains("污泥泵房")]
+    pump_ce = float(pump[col].sum())
+
+    pam = df[df["工艺单元"].astype(str).str.contains("PAM")]
+    pam_ce = float(pam[col].sum())
+
+    return {
+        "code": 0,
+        "msg": "",
+        "data": {
+            "totalCarbonEmissions": total,
+            "recycledWaterTankCE": recycled_ce,
+            "sludgeConditioningTankCE": cond_ce,
+            "sludgeThickeningTankCE": thick_ce,
+            "sludgePumpHouseCE": pump_ce,
+            "pamRoomDewateringRoomCE": pam_ce,
+        },
+    }
+
+
+# ========= 2) 厂内-污泥处理段-碳排趋势 =========
+
+@router.post("/api/process/inner/污泥处理/trend")
+def sludge_trend(body: TrendBody) -> Dict[str, Any]:
+    """
+    qtype:
+      1 = 回收水池
+      2 = 污泥调节池
+      3 = 污泥浓缩池
+      4 = 污泥泵房
+      5 = 污泥PAM投加间、脱水间（所有含 PAM 的单元）
+    timeType:
+      1=日，2=周、3=月、4=年
+
+    数据来源：sheet《水厂内_分单元》
+      - 总碳排: 合计_*
+      - 电耗碳排: 电耗_*
+      - 药耗碳排: 药耗_*
+    """
+    suffix = _period_suffix(body.timeType)  # 日/周/月/年
+    col_total = f"合计_{suffix}"
+    col_elec = f"电耗_{suffix}"
+    col_chem = f"药耗_{suffix}"
+
+    df = _select_sludge_units()
+
+    # 选定目标单元
+    if body.qtype == 1:
+        name = "回收水池"
+        target = df[df["工艺单元"].astype(str).str.contains("回收水池")]
+    elif body.qtype == 2:
+        name = "污泥调节池"
+        target = df[df["工艺单元"].astype(str).str.contains("污泥调节池")]
+    elif body.qtype == 3:
+        name = "污泥浓缩池"
+        target = df[df["工艺单元"].astype(str).str.contains("污泥浓缩池")]
+    elif body.qtype == 4:
+        name = "污泥泵房"
+        target = df[df["工艺单元"].astype(str).str.contains("污泥泵房")]
+    elif body.qtype == 5:
+        name = "污泥PAM投加间、脱水间"
+        target = df[df["工艺单元"].astype(str).str.contains("PAM")]
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="qtype 只能是 1(回收水池)/2(污泥调节池)/3(污泥浓缩池)/4(污泥泵房)/5(污泥PAM投加间、脱水间)",
+        )
+
+    if target.empty:
+        raise HTTPException(status_code=404, detail=f"未在水厂内_分单元中找到 {name} 的数据")
+
+    for c in [col_total, col_elec, col_chem]:
+        if c not in target.columns:
+            raise HTTPException(status_code=500, detail=f"水厂内_分单元 缺少字段：{c}")
+
+    total_val = float(target[col_total].sum())
+    elec_val = float(target[col_elec].sum())
+    chem_val = float(target[col_chem].sum())
+
+    period_label = suffix  # “日/周/月/年” 作为 x 轴标签
+
+    return {
+        "code": 0,
+        "msg": "",
+        "data": {
+            "id": "80",
+            "styleType": "0",
+            "customOption": {},
+            "xAxis": [
+                {
+                    "type": "category",
+                    "name": "",
+                    "data": [period_label],
+                }
+            ],
+            "yAxis": [
+                {
+                    "name": "kgCO₂e",
+                    "type": "value",
+                }
+            ],
+            "series": [
+                {
+                    "name": "总碳排",
+                    "type": "line",
+                    "data": [total_val],
+                },
+                {
+                    "name": "电耗碳排",
+                    "type": "line",
+                    "data": [elec_val],
+                },
+                {
+                    "name": "药耗碳排",
+                    "type": "line",
+                    "data": [chem_val],
+                },
+            ],
+            "colors": [
+                "#4992ff",
+                "#7cffb2",
+                "#dd79ff",
+                "#fddd60",
+                "#ff6e76",
+                "#58d9f9",
+                "#05c091",
+                "#ff8a45",
+                "#8d48e3",
+            ],
+        },
+    }
+
+
+# ========= 3) 厂内-污泥处理段-碳排占比 =========
+
+@router.get("/api/process/inner/污泥处理/share")
+def sludge_share(timeType: int = 4) -> Dict[str, Any]:
+    """
+    污泥处理段内部构成占比（使用《水厂内_分单元》中“段内占比_日/周/月/年”列）
+
+    timeType:
+      1 = 日 -> 段内占比_日
+      2 = 周 -> 段内占比_周
+      3 = 月 -> 段内占比_月
+      4 = 年 -> 段内占比_年（默认）
+
+    维度：
+      - 回收水池碳排
+      - 污泥调节池碳排
+      - 污泥浓缩池碳排
+      - 污泥泵房碳排
+      - 污泥PAM投加间、脱水间碳排
+    """
+    suffix = _period_suffix(timeType)
+    col_ratio = f"段内占比_{suffix}"
+
+    df = _select_sludge_units()
+
+    if col_ratio not in df.columns:
+        raise HTTPException(status_code=500, detail=f"水厂内_分单元 缺少字段：{col_ratio}")
+
+    recycled = df[df["工艺单元"].astype(str).str.contains("回收水池")]
+    cond = df[df["工艺单元"].astype(str).str.contains("污泥调节池")]
+    thick = df[df["工艺单元"].astype(str).str.contains("污泥浓缩池")]
+    pump = df[df["工艺单元"].astype(str).str.contains("污泥泵房")]
+    pam = df[df["工艺单元"].astype(str).str.contains("PAM")]
+
+    def _sum_ratio(d: pd.DataFrame) -> float:
+        if d.empty:
+            return 0.0
+        return float(pd.to_numeric(d[col_ratio], errors="coerce").fillna(0.0).sum())
+
+    recycled_ratio = _sum_ratio(recycled)
+    cond_ratio = _sum_ratio(cond)
+    thick_ratio = _sum_ratio(thick)
+    pump_ratio = _sum_ratio(pump)
+    pam_ratio = _sum_ratio(pam)
+
+    source = [
+        {"工艺单元": "回收水池碳排", "数据值": recycled_ratio},
+        {"工艺单元": "污泥调节池碳排", "数据值": cond_ratio},
+        {"工艺单元": "污泥浓缩池碳排", "数据值": thick_ratio},
+        {"工艺单元": "污泥泵房碳排", "数据值": pump_ratio},
+        {"工艺单元": "污泥PAM投加间、脱水间碳排", "数据值": pam_ratio},
+    ]
+
+    return {
+        "code": 0,
+        "msg": "",
+        "data": {
+            "dimensions": ["工艺单元", "数据值"],
+            "source": source,
+            "dimensionsMapping": ["工艺单元", "数据值"],
+        },
+    }
