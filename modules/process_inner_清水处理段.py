@@ -14,6 +14,7 @@ sheet：
 
 import os
 from typing import Optional, Dict, Any
+from modules.common import format_float_2d
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
@@ -178,7 +179,7 @@ def clearwater_info(
     ordinary_reg = df[df["工艺单元"].astype(str).str.contains("普通水调节")]
     ordinary_reg_ce = float(ordinary_reg[col].sum())
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -186,7 +187,7 @@ def clearwater_info(
             "clearWaterTankCE": clear_tank_ce,
             "ordinaryWaterRegulationCE": ordinary_reg_ce,
         },
-    }
+    })
 
 
 # ========= 2) 厂内-清水处理段-碳排趋势 =========
@@ -225,7 +226,7 @@ def clearwater_trend(body: TrendBody) -> Dict[str, Any]:
 
     period_label = suffix  # “日/周/月/年” 作为 x 轴标签
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -274,7 +275,7 @@ def clearwater_trend(body: TrendBody) -> Dict[str, Any]:
                 "#8d48e3",
             ],
         },
-    }
+    })
 
 
 # ========= 3) 厂内-清水处理段-碳排占比 =========
@@ -322,7 +323,7 @@ def clearwater_share(timeType: int = 4) -> Dict[str, Any]:
         {"工艺单元": "送水泵房碳排", "数据值": pump_house_ratio},
     ]
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -330,4 +331,4 @@ def clearwater_share(timeType: int = 4) -> Dict[str, Any]:
             "source": source,
             "dimensionsMapping": ["工艺单元", "数据值"],
         },
-    }
+    })

@@ -12,6 +12,7 @@ sheet：
 
 import os
 from typing import Optional, Dict, Any
+from modules.common import format_float_2d
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
@@ -127,14 +128,14 @@ def mixing_info(
     else:
         fold_ce = 0.0
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
             "totalCarbonEmissions": total,
             "foldablePlateReactionHorizontalFlowSedimentationTankCE": fold_ce,
         },
-    }
+    })
 
 
 # ========= 2) 厂内-混凝沉淀段-碳排趋势 =========
@@ -181,7 +182,7 @@ def mixing_trend(body: TrendBody) -> Dict[str, Any]:
 
     period_label = suffix  # 直接用“日/周/月/年”作为 x 轴标签
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -230,7 +231,7 @@ def mixing_trend(body: TrendBody) -> Dict[str, Any]:
                 "#8d48e3",
             ],
         },
-    }
+    })
 
 
 # ========= 3) 厂内-混凝沉淀段-碳排占比 =========
@@ -277,7 +278,7 @@ def mixing_share(timeType: int = 4) -> Dict[str, Any]:
         {"碳排结构": "PAC投加", "数据值": pac_ratio},
     ]
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -285,4 +286,4 @@ def mixing_share(timeType: int = 4) -> Dict[str, Any]:
             "source": source,
             "dimensionsMapping": ["碳排结构", "数据值"],
         },
-    }
+    })

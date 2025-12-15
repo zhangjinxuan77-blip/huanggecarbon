@@ -16,8 +16,10 @@ from .common import (
     load_table_from_excel,
     pick_scopes,
     standardize_period,
-    TIME_MAP,   # {1:"日", 2:"周", 3:"月", 4:"年"}
+    TIME_MAP,
+    format_float_2d,
 )
+
 
 router = APIRouter()
 
@@ -100,4 +102,5 @@ def scope_summary(body: TimeBody):
             status_code=400,
             detail="timeType 只能是 1(日)/2(周)/3(月)/4(年)",
         )
-    return build_payload(period)
+    return format_float_2d(build_payload(period))
+

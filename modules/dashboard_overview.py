@@ -23,6 +23,8 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from modules.common import format_float_2d
+
 router = APIRouter()
 
 # 1=日, 2=周, 3=月, 4=年（你文档只写了 1/2，这里多给两个不影响）
@@ -116,4 +118,4 @@ def overview(body: TimeBody):
         raise HTTPException(400, "timeType 只能是 1(日)/2(周)/3(月)/4(年)")
 
     period = TIME_MAP[body.timeType]
-    return build_overview(period)
+    return format_float_2d(build_overview(period))

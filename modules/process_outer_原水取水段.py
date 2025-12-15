@@ -14,6 +14,7 @@ sheet：
 
 import os
 from typing import Optional, Dict, Any
+from modules.common import format_float_2d
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
@@ -220,7 +221,7 @@ def rawwater_share(timeType: int = 4) -> Dict[str, Any]:
         {"碳排结构": "次氯酸钠间", "数据值": _sum_ratio(hypo)},
     ]
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -228,4 +229,4 @@ def rawwater_share(timeType: int = 4) -> Dict[str, Any]:
             "source": source,
             "dimensionsMapping": ["product", "数据值"],
         },
-    }
+    })

@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import pandas as pd
-
+from modules.common import format_float_2d
 router = APIRouter()
 
 # 入参
@@ -60,7 +60,7 @@ def scope_share(body: TimeBody):
     p2 = float(row["范围2占比(%)"])
     p3 = float(row["范围3占比(%)"])
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -72,4 +72,4 @@ def scope_share(body: TimeBody):
             ],
             "dimensionsMapping": ["name", "data"]
         }
-    }
+    })

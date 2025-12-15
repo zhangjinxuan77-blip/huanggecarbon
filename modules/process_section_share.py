@@ -15,6 +15,7 @@
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from modules.common import format_float_2d
 import pandas as pd
 import os
 
@@ -119,7 +120,7 @@ def process_section_share(body: TimeBody):
     except Exception as e:
         raise HTTPException(500, f"数据处理失败: {e}")
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -127,4 +128,4 @@ def process_section_share(body: TimeBody):
             "source": source,
             "dimensionsMapping": ["name", "data"],
         },
-    }
+    })

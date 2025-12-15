@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import pandas as pd
 from typing import Optional
-
+from modules.common import format_float_2d
 # ====== 路由器 ======
 router = APIRouter()
 
@@ -81,7 +81,7 @@ def build_payload(period_label: str) -> dict:
     solids_pct = safe_float(r["含固率_%"])
     dist_km = safe_float(r["运输距离_km"])
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -92,7 +92,7 @@ def build_payload(period_label: str) -> dict:
                 ["<div style='color:#F9DA68'>运输距离</div>", f"{dist_km:.2f} km"],
             ],
         },
-    }
+    })
 
 
 @router.post("/api/scope/scope_3/sludge")
@@ -100,4 +100,4 @@ def scope_3_sludge(body: TimeBody):
     period = TIME_MAP.get(int(body.timeType))
     if not period:
         raise HTTPException(400, "timeType 只能是 1(日)/2(周)/3(月)/4(年)")
-    return build_payload(period)
+    return format_float_2d(build_payload(period))

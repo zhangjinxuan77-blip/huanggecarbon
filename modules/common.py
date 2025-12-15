@@ -68,3 +68,21 @@ def pick_scopes(df: pd.DataFrame) -> Tuple[str, str, str, str]:
     if not (pc and s1c and s2c and s3c):
         raise ValueError(f"缺少必要列，实际列：{cols}")
     return pc, s1c, s2c, s3c
+
+from decimal import Decimal
+import numpy as np
+
+def format_float_2d(x):
+    """
+    递归：把所有 float / numpy.float / Decimal 统一 round 到 2 位
+    只用于 API 输出层（不动计算层精度）
+    """
+    if isinstance(x, dict):
+        return {k: format_float_2d(v) for k, v in x.items()}
+    if isinstance(x, list):
+        return [format_float_2d(v) for v in x]
+    if isinstance(x, tuple):
+        return tuple(format_float_2d(v) for v in x)
+    if isinstance(x, (float, np.floating, Decimal)):
+        return round(float(x), 2)
+    return x

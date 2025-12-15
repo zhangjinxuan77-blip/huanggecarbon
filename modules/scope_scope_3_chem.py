@@ -12,7 +12,7 @@ from typing import Optional
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-
+from modules.common import format_float_2d
 router = APIRouter()
 
 
@@ -111,4 +111,4 @@ def scope_3_chem(body: TimeBody):
             status_code=400,
             detail="timeType 只能是 1(日)/2(周)/3(月)/4(年)",
         )
-    return build_payload(period)
+    return format_float_2d(build_payload(period))

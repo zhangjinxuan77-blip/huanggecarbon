@@ -13,6 +13,7 @@ sheet：
 
 import os
 from typing import Optional, Dict, Any
+from modules.common import format_float_2d
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
@@ -181,7 +182,7 @@ def pretreat_info(
     else:
         dosing_room = 0.0
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -189,7 +190,7 @@ def pretreat_info(
             "distributionWellPreOzoneContactTankCE": distribution_well_ozone,
             "dosingRoomCE": dosing_room,
         },
-    }
+    })
 
 
 # ========= 2) 厂内-预处理段-碳排趋势 =========
@@ -240,7 +241,7 @@ def pretreat_trend(body: TrendBody) -> Dict[str, Any]:
 
     period_label = suffix  # 直接用“日/周/月/年”作为 x 轴标签
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -289,7 +290,7 @@ def pretreat_trend(body: TrendBody) -> Dict[str, Any]:
                 "#8d48e3",
             ],
         },
-    }
+    })
 
 
 # ========= 3) 厂内-预处理段-碳排占比 =========
@@ -338,7 +339,7 @@ def pretreat_share(timeType: int = 4) -> Dict[str, Any]:
         {"碳排结构": "加药间", "数据值": hypo_ratio},
     ]
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -346,4 +347,4 @@ def pretreat_share(timeType: int = 4) -> Dict[str, Any]:
             "source": source,
             "dimensionsMapping": ["碳排结构", "数据值"],
         },
-    }
+    })

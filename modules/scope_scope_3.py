@@ -8,7 +8,7 @@ Sheet: "Scope3_汇总(日周月年)"
 
 import os
 from typing import Optional
-
+from modules.common import format_float_2d
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -81,7 +81,7 @@ def build_payload(period: str) -> dict:
     share_chem = float(r["药剂碳排占比"])
     share_sludge = float(r["污泥运输占比"])
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -100,7 +100,7 @@ def build_payload(period: str) -> dict:
                 ],
             },
         },
-    }
+    })
 
 
 @router.post("/api/scope/scope_3")

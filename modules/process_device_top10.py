@@ -8,6 +8,8 @@ sheet：默认第一个，列：A=设备名称，B=日碳排(kgCO2e)
 from fastapi import APIRouter, HTTPException
 import pandas as pd
 from typing import Optional, List, Dict, Any  # ★ 新增
+from modules.common import format_float_2d
+
 
 router = APIRouter()
 
@@ -63,8 +65,8 @@ def device_top10():
     data = load_top10()
     data = data[:10]      # 只取前 10
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": data,
-    }
+    })

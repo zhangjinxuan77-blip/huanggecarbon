@@ -17,6 +17,7 @@ from typing import Optional, Dict, Any
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
+from modules.common import format_float_2d
 
 router = APIRouter()
 
@@ -178,7 +179,7 @@ def deep_info(
     sodium_room = df[df["工艺单元"] == "次氯酸钠投加间"]
     sodium_room_ce = float(sodium_room[col].sum())
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -188,7 +189,7 @@ def deep_info(
             "flipPlateCarbonFilterCE": flip_filter_ce,
             "sodiumHypochloriteDosingRoomCE": sodium_room_ce,
         },
-    }
+    })
 
 
 # ========= 2) 厂内-深度处理段-碳排趋势 =========
@@ -248,7 +249,7 @@ def deep_trend(body: TrendBody) -> Dict[str, Any]:
 
     period_label = suffix  # “日/周/月/年” 作为 x 轴标签
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -297,7 +298,7 @@ def deep_trend(body: TrendBody) -> Dict[str, Any]:
                 "#8d48e3",
             ],
         },
-    }
+    })
 
 
 # ========= 3) 厂内-深度处理段-碳排占比 =========
@@ -352,7 +353,7 @@ def deep_share(timeType: int = 4) -> Dict[str, Any]:
         {"工艺单元": "次氯酸钠投加间碳排", "数据值": sodium_room_ratio},
     ]
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -360,4 +361,4 @@ def deep_share(timeType: int = 4) -> Dict[str, Any]:
             "source": source,
             "dimensionsMapping": ["工艺单元", "数据值"],
         },
-    }
+    })

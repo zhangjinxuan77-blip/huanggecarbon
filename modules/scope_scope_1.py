@@ -10,7 +10,7 @@ Sheet: Scope1_O3泄漏
 
 import os
 from typing import Optional
-
+from modules.common import format_float_2d
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -93,7 +93,7 @@ def scope_1(body: TimeBody):
     dosage = float(r["O3投加量_kg"])
     leakage_amt = float(r["O3泄漏量_kg"])
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -101,4 +101,4 @@ def scope_1(body: TimeBody):
             "dosage": f"{dosage}",
             "leakageAmount": f"{leakage_amt}",
         },
-    }
+    })

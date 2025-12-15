@@ -28,7 +28,7 @@
 
 import os
 from typing import Optional, Dict, Any
-
+from modules.common import format_float_2d
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -256,7 +256,7 @@ def scope_2(body: Scope2Body) -> Dict[str, Any]:
     ssd_elec_kwh = float(ssd_elec_kwh_df[kwh_col].sum()) if not ssd_elec_kwh_df.empty else 0.0
 
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -269,4 +269,4 @@ def scope_2(body: Scope2Body) -> Dict[str, Any]:
             "ssdElectricityConsumption": ssd_elec_kwh,
             "ssdElectricityConsumptionCarbonEmissions": ssd_elec_ce,
         },
-    }
+    })

@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import pandas as pd
 from typing import Optional
-
+from modules.common import format_float_2d
 router = APIRouter()
 
 # ====== 入参 ======
@@ -72,7 +72,7 @@ def unit_intensity(body: TimeBody):
             "单位处理强度": float(row["单位水处理强度_kgCO2e_per_m3"]),
         })
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -80,4 +80,4 @@ def unit_intensity(body: TimeBody):
             "source": source,
             "dimensionsMapping": ["总处理水量", "单位处理强度"],
         }
-    }
+    })
