@@ -129,7 +129,7 @@ def rawwater_info(
     station = df[df["工艺单元"].astype(str).str.contains("取水泵站")]
     hypo = df[df["工艺单元"].astype(str).str.contains("次氯酸钠")]
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -138,7 +138,7 @@ def rawwater_info(
             "waterIntakePumpingStationCE": float(station[col].sum()),
             "sodiumHypochloriteRoomCE": float(hypo[col].sum()),
         }
-    }
+    })
 
 
 # ========= 2) 场外-原水取水段-碳排趋势 =========
@@ -176,7 +176,7 @@ def rawwater_trend(body: TrendBody) -> Dict[str, Any]:
     # x 轴名称（你可按前端需要改）
     period_label = suffix
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
@@ -195,7 +195,7 @@ def rawwater_trend(body: TrendBody) -> Dict[str, Any]:
                 "#58d9f9", "#05c091", "#ff8a45", "#8d48e3"
             ],
         },
-    }
+    })
 
 
 # ========= 3) 场外-原水取水段-碳排占比 =========
