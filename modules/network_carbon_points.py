@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-管网碳排监测点接口（仅 日/周/月/年）
-接口：POST /api/network/points-carbon
-入参：{"timeType": 1}  # 1=日 2=周 3=月 4=年
+管网碳排监测点接口（固定读取年数据）
 出参：监测点名称（前端为准）、碳排量、监测时间（最新一条）
 """
 
@@ -11,60 +9,48 @@ import pandas as pd
 from typing import List, Dict, Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 from modules.common import format_float_2d
 
 router = APIRouter()
 
-# base_dir=当前文件上上级目录
+# =============== 路径 ===============
 base_dir = os.path.dirname(os.path.dirname(__file__))
 XLSX_PATH = os.path.join(base_dir, "data", "管网碳排_按压力监测点_坐标匹配.xlsx")
 
-# timeType -> sheet 映射（1=日、2=周、3=月、4=年）
-SHEET_MAP = {
-    1: "Daily_PressurePoint",
-    2: "Weekly_PressurePoint",
-    3: "Monthly_PressurePoint",
-    4: "Yearly_PressurePoint",
-}
+# =============== 直接固定用“年数据”sheet ===============
+YEARLY_SHEET = "Yearly_PressurePoint"
 
 
-class TimeBody(BaseModel):
-    timeType: int  # 1=日 2=周 3=月 4=年
+# 简单缓存（避免重复读 Excel）
+_CACHE: Dict[str, pd.DataFrame] = {}
 
 
-# 简单缓存（避免每次都读 Excel）
-_CACHE: dict[int, pd.DataFrame] = {}
-
-
-def _load_sheet(time_type: int) -> pd.DataFrame:
-    if time_type not in SHEET_MAP:
-        raise HTTPException(status_code=400, detail="timeType 必须为 1~4（日/周/月/年）")
+def _load_yearly_sheet() -> pd.DataFrame:
+    if YEARLY_SHEET in _CACHE:
+        return _CACHE[YEARLY_SHEET]
 
     if not os.path.exists(XLSX_PATH):
-        raise HTTPException(status_code=404, detail=f"未找到文件: {XLSX_PATH}")
+        raise HTTPException(status_code=404, detail="未找到管网碳排 Excel 文件")
 
-    if time_type in _CACHE:
-        return _CACHE[time_type]
-
-    sheet = SHEET_MAP[time_type]
     try:
-        df = pd.read_excel(XLSX_PATH, sheet_name=sheet)
+        df = pd.read_excel(XLSX_PATH, sheet_name=YEARLY_SHEET)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"读取Excel失败: {repr(e)}")
+        raise HTTPException(status_code=500, detail=f"读取 Yearly_PressurePoint 失败: {repr(e)}")
 
-    _CACHE[time_type] = df
+    _CACHE[YEARLY_SHEET] = df
     return df
 
 
 def _latest_per_point(df: pd.DataFrame) -> pd.DataFrame:
     """
-    每个 point 取最新一条记录
-    - 日/周/月/年 sheet 通常用 period 列
+    每个监测点取最新一条记录
+    必须包含列：
+    - point（监测点名称）
+    - CO2e_kg（碳排量）
+    - period 或 ts（时间列）
     """
     if "point" not in df.columns:
         raise HTTPException(status_code=500, detail="数据缺少 point 列")
-
     if "CO2e_kg" not in df.columns:
         raise HTTPException(status_code=500, detail="数据缺少 CO2e_kg 列")
 
@@ -78,24 +64,26 @@ def _latest_per_point(df: pd.DataFrame) -> pd.DataFrame:
 
     df = df.sort_values(["point", time_col])
     latest = df.groupby("point", as_index=False).tail(1)
-
     return latest[["point", time_col, "CO2e_kg"]]
 
 
 @router.post("/api/network/points-carbon")
-def network_points_carbon(body: TimeBody) -> Dict[str, Any]:
+def network_points_carbon() -> Dict[str, Any]:
     """
-    返回前端地图点弹窗所需数据：
-    - name: 监测点名称（前端为准）
-    - carbonKg: 碳排量（kgCO2e）
-    - monitorTime: 监测时间（字符串）
+    固定返回年数据，每个监测点最新一条
+    出参结构：
+    {
+      "timeType": "年",
+      "sheet": "Yearly_PressurePoint",
+      "count": N,
+      "data": [{name, carbonKg, monitorTime}]
+    }
     """
-    time_type = body.timeType
-    df = _load_sheet(time_type)
+    df = _load_yearly_sheet()
     latest = _latest_per_point(df)
 
     items: List[Dict[str, Any]] = []
-    time_col = "period" if "period" in latest.columns else "ts"
+    time_col = "period" if "period" in df.columns else "ts"
 
     for _, r in latest.iterrows():
         name = str(r["point"])
@@ -109,8 +97,8 @@ def network_points_carbon(body: TimeBody) -> Dict[str, Any]:
         })
 
     return format_float_2d({
-        "timeType": time_type,
-        "sheet": SHEET_MAP[time_type],
+        "timeType": "年",
+        "sheet": "Yearly_PressurePoint",
         "count": len(items),
         "data": items
     })
