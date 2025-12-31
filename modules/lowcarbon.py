@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 router = APIRouter()
 
 base_dir = os.path.dirname(os.path.dirname(__file__))
-TXT_PATH = os.path.join(base_dir, "data", "碳排诊断输出.txt")
+TXT_PATH = os.path.join(base_dir, "data", "绿色低碳评估.txt")
 
 
 # ======================== 工具函数 ========================
