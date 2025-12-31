@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-import os, re
+import os
+import re
+import pandas as pd
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 
@@ -9,16 +11,16 @@ base_dir = os.path.dirname(os.path.dirname(__file__))
 TXT_PATH = os.path.join(base_dir, "data", "碳排诊断输出.txt")
 
 
-
+# ======================== 工具函数 ========================
 
 def _read_txt() -> str:
     if not os.path.exists(TXT_PATH):
-        raise HTTPException(status_code=404, detail="未找到诊断文件: 绿色低碳评估.txt")
+        raise HTTPException(status_code=404, detail=f"未找到诊断文件: {TXT_PATH}")
     try:
         with open(TXT_PATH, "r", encoding="utf-8") as f:
             return f.read()
-    except Exception:
-        raise HTTPException(status_code=500, detail="读取诊断文件失败")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取诊断文件失败: {e}")
 
 
 def _must_float(s: str) -> float:
@@ -28,12 +30,40 @@ def _must_float(s: str) -> float:
         raise HTTPException(status_code=500, detail=f"数值解析失败: {s}")
 
 
+def _normalize_text(text: str) -> str:
+    """统一全角符号/破折号/冒号，减少regex失败概率"""
+    text = text.replace("：", ":")
+    text = text.replace("—", "-").replace("–", "-").replace("－", "-")
+    return text
+
+
+def _head_snippet(text: str, n: int = 400) -> str:
+    return text[:n].replace("\n", "\\n").replace("\r", "\\r")
+
+
 # ==================== 模块1 解析（左：Top5 排名） ====================
+
 def _parse_realtime_top5(text: str):
-    pattern = r"第(\d+)名:\s*(.*?)\s*-\s*([\d,\.]+)\s*kgCO2e/天"
-    matches = re.findall(pattern, text)
+    """
+    兼容：
+    - 第1名: XXX - 123 kgCO2e/天
+    - 第 1 名：XXX — 123 kgCO2e/日
+    - kgCO2e/d, tCO2e/天 等
+    """
+    text = _normalize_text(text)
+
+    pattern = re.compile(
+        r"第\s*(\d+)\s*名\s*:\s*([^\n\r\-]+?)\s*-\s*([\d,]+(?:\.\d+)?)\s*"
+        r"(?:kgCO2e|tCO2e)\s*/\s*(?:天|日|d)",
+        flags=re.IGNORECASE
+    )
+    matches = pattern.findall(text)
+
     if not matches:
-        raise HTTPException(status_code=500, detail="未能解析到实时工艺单元碳排排名数据")
+        raise HTTPException(
+            status_code=500,
+            detail=f"未能解析到实时工艺单元碳排排名数据；txt片段={_head_snippet(text)}"
+        )
 
     df = pd.DataFrame(matches, columns=["rank", "process", "emission"])
     df["rank"] = df["rank"].astype(int)
@@ -42,46 +72,87 @@ def _parse_realtime_top5(text: str):
 
     return df.to_dict(orient="records")
 
-# ==================== 模块2 解析（中：低碳策略） ====================
-def _parse_strategies(text: str):
-    out = []
-    for idx in [1, 2, 3]:
-        title_m = re.search(rf"策略{idx}[:：]\s*([^\n\r]+)", text)
-        kg_m = re.search(rf"策略{idx}.*?预计降碳[:：]\s*([\d,\.]+)\s*kgCO2e/年", text, flags=re.S)
 
-        if (not title_m) or (not kg_m):
-            raise HTTPException(status_code=500, detail=f"策略{idx}解析失败（标题或预计降碳缺失）")
+# ==================== 模块2 解析（中：低碳策略） ====================
+
+def _parse_strategies(text: str):
+    """
+    兼容关键字：
+    - 预计降碳 / 预计降碳量 / 预计减排 / 预计减排量 / 年降碳潜力
+    单位兼容：
+    - kgCO2e/年, tCO2e/年, kgCO2e/yr
+    """
+    text = _normalize_text(text)
+    out = []
+
+    for idx in [1, 2, 3]:
+        title_m = re.search(rf"策略\s*{idx}\s*:\s*([^\n\r]+)", text)
+        if not title_m:
+            raise HTTPException(
+                status_code=500,
+                detail=f"策略{idx}标题解析失败（未找到 '策略{idx}:' 行）；txt片段={_head_snippet(text)}"
+            )
 
         title = title_m.group(1).strip()
-        kg = _must_float(kg_m.group(1))
 
+        kg_m = re.search(
+            rf"策略\s*{idx}[\s\S]{{0,300}}?(?:预计降碳量?|预计减排量?|预计降碳|预计减排|年降碳潜力)\s*:\s*"
+            rf"([\d,]+(?:\.\d+)?)\s*(?:kgCO2e|tCO2e)\s*/\s*(?:年|yr)",
+            text,
+            flags=re.IGNORECASE
+        )
+        if not kg_m:
+            raise HTTPException(
+                status_code=500,
+                detail=f"策略{idx}解析失败（预计降碳缺失或单位不匹配）；txt片段={_head_snippet(text)}"
+            )
+
+        kg = _must_float(kg_m.group(1))
         out.append({"code": f"策略{idx}", "title": title, "kgco2e_y": kg})
+
     return out
 
 
 # ==================== 模块3 解析（右：低碳评估） ====================
+
 def _parse_evaluation(text: str):
-    green_kg = re.search(r"绿电碳减排[:：]\s*([\d,\.]+)\s*kgCO2e", text)
-    total_kg = re.search(r"总降碳潜力[:：]\s*([\d,\.]+)\s*kgCO2e/年", text)
-    grade_m = re.search(r"绿色低碳等级[:：]\s*([^\s]+)", text)
+    """
+    兼容关键字：
+    - 绿电碳减排/绿电减排/绿电贡献
+    - 总降碳潜力/预计总降碳潜力/年总降碳潜力/预计降碳潜力
+    - 绿色低碳等级/绿色等级/低碳等级/等级
+    """
+    text = _normalize_text(text)
 
-    if not green_kg or not total_kg or not grade_m:
-        raise HTTPException(status_code=500, detail="未能解析到绿色低碳评估关键字段")
+    green_kg = re.search(
+        r"(?:绿电碳减排量?|绿电碳减排|绿电减排|绿电贡献)\s*:\s*([\d,]+(?:\.\d+)?)\s*(?:kgCO2e|tCO2e)",
+        text, flags=re.IGNORECASE
+    )
+    total_kg = re.search(
+        r"(?:总降碳潜力|预计总降碳潜力|年总降碳潜力|预计降碳潜力)\s*:\s*([\d,]+(?:\.\d+)?)\s*(?:kgCO2e|tCO2e)\s*/\s*(?:年|yr)",
+        text, flags=re.IGNORECASE
+    )
+    grade_m = re.search(
+        r"(?:绿色低碳等级|绿色等级|低碳等级|等级)\s*:\s*([^\s\r\n]+)",
+        text
+    )
 
-    green_val = _must_float(green_kg.group(1))
-    total_val = _must_float(total_kg.group(1))
-    grade = grade_m.group(1).strip()
+    if not (green_kg and total_kg and grade_m):
+        raise HTTPException(
+            status_code=500,
+            detail=f"未能解析到绿色低碳评估关键字段；txt片段={_head_snippet(text)}"
+        )
 
     return {
-        "green_kgco2e": green_val,
-        "total_kgco2e_per_year": total_val,
-        "grade": grade
+        "green_kgco2e": _must_float(green_kg.group(1)),
+        "total_kgco2e_per_year": _must_float(total_kg.group(1)),
+        "grade": grade_m.group(1).strip()
     }
 
 
 # ======================== 生成 HTML 面板的函数（共用style模板） ========================
+
 def _wrap_panel(title: str, inner_html: str) -> str:
-    """统一给每个模块套科技蓝卡片面板"""
     return f"""
     <div style="
         margin-bottom:36px;
@@ -103,14 +174,12 @@ def _wrap_panel(title: str, inner_html: str) -> str:
 
 
 # ==================== 左侧模块接口 ====================
+
 @router.get("/api/dashboard/lowcarbon/realtime", response_class=HTMLResponse)
 def lowcarbon_realtime():
     text = _read_txt()
-
-    # 提取 Top5 设备碳排排名（含碳排数值）
     top5 = _parse_realtime_top5(text)
 
-    # 生成排名 HTML（Top5）
     rows = "".join([f"""
         <div style="
             font-size:16px; padding:7px 0;
@@ -120,12 +189,11 @@ def lowcarbon_realtime():
             <span style="opacity:.9;">No.{item['rank']}</span>
             <span style="margin-left:6px;">{item['process']}</span>
             <span style="float:right; font-weight:800; color:#cfe2ff;">
-                {item['emission']} kgCO2e/天
+                {item['emission']:.2f} kgCO2e/天
             </span>
         </div>
     """ for item in top5])
 
-    # 可靠结论文案（你提供的内容）
     conclusion = """
     <div style="
         margin-top:20px;
@@ -142,10 +210,8 @@ def lowcarbon_realtime():
     </div>
     """
 
-    # 组合左侧模块内容（排名 + 结论）
     inner_html = rows + conclusion
 
-    # 渲染最终页面
     html = f"""
     <div style="
         background: linear-gradient(180deg, #0a0f1f, #121a3a);
@@ -164,6 +230,7 @@ def lowcarbon_realtime():
 
 
 # ==================== 中间模块接口 ====================
+
 @router.get("/api/dashboard/lowcarbon/strategies", response_class=HTMLResponse)
 def lowcarbon_strategies():
     text = _read_txt()
@@ -187,6 +254,7 @@ def lowcarbon_strategies():
 
 
 # ==================== 右侧模块接口 ====================
+
 @router.get("/api/dashboard/lowcarbon/evaluation", response_class=HTMLResponse)
 def lowcarbon_evaluation():
     text = _read_txt()
