@@ -1,37 +1,35 @@
 # -*- coding: utf-8 -*-
 """
-管网碳排监测点接口
+管网碳排监测点接口（仅 日/周/月/年）
 接口：POST /api/network/points-carbon
-入参：{"timeType": 1}  # 1=小时 2=日 3=周 4=月 5=年
+入参：{"timeType": 1}  # 1=日 2=周 3=月 4=年
 出参：监测点名称（前端为准）、碳排量、监测时间（最新一条）
 """
 
 import os
 import pandas as pd
-from typing import Optional, List, Dict, Any
+from typing import List, Dict, Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter()
 
-# 和你现有接口保持一致：base_dir=当前文件上上级目录
+# base_dir=当前文件上上级目录
 base_dir = os.path.dirname(os.path.dirname(__file__))
-
 XLSX_PATH = os.path.join(base_dir, "data", "管网碳排_按压力监测点_坐标匹配.xlsx")
 
-# timeType -> sheet 映射
+# timeType -> sheet 映射（1=日、2=周、3=月、4=年）
 SHEET_MAP = {
-    1: "Hourly_PressurePoint",
-    2: "Daily_PressurePoint",
-    3: "Weekly_PressurePoint",
-    4: "Monthly_PressurePoint",
-    5: "Yearly_PressurePoint",
+    1: "Daily_PressurePoint",
+    2: "Weekly_PressurePoint",
+    3: "Monthly_PressurePoint",
+    4: "Yearly_PressurePoint",
 }
 
 
 class TimeBody(BaseModel):
-    timeType: int  # 1=小时 2=日 3=周 4=月 5=年
+    timeType: int  # 1=日 2=周 3=月 4=年
 
 
 # 简单缓存（避免每次都读 Excel）
@@ -40,7 +38,7 @@ _CACHE: dict[int, pd.DataFrame] = {}
 
 def _load_sheet(time_type: int) -> pd.DataFrame:
     if time_type not in SHEET_MAP:
-        raise HTTPException(status_code=400, detail="timeType 必须为 1~5")
+        raise HTTPException(status_code=400, detail="timeType 必须为 1~4（日/周/月/年）")
 
     if not os.path.exists(XLSX_PATH):
         raise HTTPException(status_code=404, detail=f"未找到文件: {XLSX_PATH}")
@@ -58,36 +56,29 @@ def _load_sheet(time_type: int) -> pd.DataFrame:
     return df
 
 
-def _latest_per_point(df: pd.DataFrame, time_type: int) -> pd.DataFrame:
+def _latest_per_point(df: pd.DataFrame) -> pd.DataFrame:
     """
     每个 point 取最新一条记录
-    - Hourly sheet 通常是 ts 列
-    - Daily/Weekly/Monthly/Yearly sheet 通常是 period 列
+    - 日/周/月/年 sheet 通常用 period 列
     """
     if "point" not in df.columns:
         raise HTTPException(status_code=500, detail="数据缺少 point 列")
 
-    # 碳排列名（你文件里就是 CO2e_kg）
     if "CO2e_kg" not in df.columns:
         raise HTTPException(status_code=500, detail="数据缺少 CO2e_kg 列")
 
-    # 时间列判断
-    time_col = "ts" if "ts" in df.columns else ("period" if "period" in df.columns else None)
+    time_col = "period" if "period" in df.columns else ("ts" if "ts" in df.columns else None)
     if time_col is None:
-        raise HTTPException(status_code=500, detail="数据缺少 ts/period 时间列")
+        raise HTTPException(status_code=500, detail="数据缺少 period/ts 时间列")
 
-    # 转时间类型，保证可排序
     df = df.copy()
     df[time_col] = pd.to_datetime(df[time_col], errors="coerce")
-
-    # 丢掉没有时间/没有点名的行
     df = df.dropna(subset=["point", time_col])
 
-    # 按点名+时间排序，取每个点最后一行
-    df = df.sort_values([ "point", time_col ])
+    df = df.sort_values(["point", time_col])
     latest = df.groupby("point", as_index=False).tail(1)
 
-    return latest[[ "point", time_col, "CO2e_kg" ]]
+    return latest[["point", time_col, "CO2e_kg"]]
 
 
 @router.post("/api/network/points-carbon")
@@ -100,14 +91,10 @@ def network_points_carbon(body: TimeBody) -> Dict[str, Any]:
     """
     time_type = body.timeType
     df = _load_sheet(time_type)
-    latest = _latest_per_point(df, time_type)
+    latest = _latest_per_point(df)
 
-    # 转成前端更易用的 list
-    # 你截图里显示“实时值/上传时间”，这里给你对齐字段：
-    # 实时值 -> carbonKg
-    # 上传时间 -> monitorTime
     items: List[Dict[str, Any]] = []
-    time_col = "ts" if "ts" in latest.columns else "period"
+    time_col = "period" if "period" in latest.columns else "ts"
 
     for _, r in latest.iterrows():
         name = str(r["point"])
@@ -116,11 +103,10 @@ def network_points_carbon(body: TimeBody) -> Dict[str, Any]:
 
         items.append({
             "name": name,
-            "carbonKg": 0 if pd.isna(carbon) else float(carbon),
+            "carbonKg": 0.0 if pd.isna(carbon) else float(carbon),
             "monitorTime": "" if pd.isna(t) else t.strftime("%Y-%m-%d %H:%M:%S"),
         })
 
-    # 你也可以加一个总览字段
     return {
         "timeType": time_type,
         "sheet": SHEET_MAP[time_type],

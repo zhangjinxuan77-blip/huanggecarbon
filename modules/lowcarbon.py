@@ -1,256 +1,206 @@
 # -*- coding: utf-8 -*-
-"""
-绿色低碳水厂评估 - 前端展示接口
-- 左：实时工艺单元碳排与能耗
-- 中：低碳运行策略推荐
-- 右：绿色低碳评估
-
-默认从 data/绿色低碳评估.txt 解析；解析失败则返回前端示例值（和截图一致）。
-"""
-
-from __future__ import annotations
-
-import os
-import re
-from datetime import datetime
-from typing import List, Optional, Dict, Any
-
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from fastapi.responses import HTMLResponse
+import os, re, pandas as pd
 
 router = APIRouter()
 
-# =============== 路径（按你项目结构：routers/xxx.py） ===============
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))  # project_root/backend/
-DATA_DIR = os.path.join(BASE_DIR, "data")
-TXT_PATH = os.path.join(DATA_DIR, "绿色低碳评估.txt")
+# 诊断文件路径（严格用这个）
+TXT_PATH = "/mnt/data/绿色低碳评估.txt"
 
 
-# =============== Pydantic Models ===============
-class RealtimeProcessItem(BaseModel):
-    name: str
-    carbon_kgco2e_per_h: float = Field(..., description="kgCO2e/h")
-    energy_kwh: float = Field(..., description="kWh")
-    green_power_pct: float = Field(..., description="0-100")
-    ts: str = Field(..., description="时间戳字符串，如 2025-08-20 20:35:00")
-
-
-class StrategyItem(BaseModel):
-    code: str = Field(..., description="策略编号，如 策略一")
-    title: str = Field(..., description="策略标题")
-    reduction_tco2e_per_year: float = Field(..., description="tCO2e/年")
-
-
-class LowCarbonEvaluation(BaseModel):
-    yoy_change_pct: float = Field(..., description="碳排年同比变化（%）")
-    green_power_contrib_tco2e: float = Field(..., description="绿电贡献（tCO2e）")
-    carbon_sink_contrib: List[str] = Field(..., description="碳汇贡献项")
-    reduction_potential_tco2e_per_year: float = Field(..., description="预计降碳潜力（tCO2e/年）")
-    grade: str = Field(..., description="绿色低碳等级，如 低/中/高")
-
-
-class LowCarbonDashboard(BaseModel):
-    realtime: List[RealtimeProcessItem]
-    strategies: List[StrategyItem]
-    evaluation: LowCarbonEvaluation
-    hint: str = Field(..., description="一句话提示，用于前端文案")
-
-
-# =============== 示例值（与你截图对齐） ===============
-def _demo_payload() -> LowCarbonDashboard:
-    # 截图左侧显示的 3 个单元（示例）
-    demo_realtime = [
-        RealtimeProcessItem(
-            name="预处理",
-            carbon_kgco2e_per_h=120.0,
-            energy_kwh=500.0,
-            green_power_pct=30.0,
-            ts="2025-08-20 20:35:00",
-        ),
-        RealtimeProcessItem(
-            name="过滤",
-            carbon_kgco2e_per_h=90.0,
-            energy_kwh=350.0,
-            green_power_pct=25.0,
-            ts="2025-08-20 20:35:00",
-        ),
-        RealtimeProcessItem(
-            name="清水池",
-            carbon_kgco2e_per_h=60.0,
-            energy_kwh=200.0,
-            green_power_pct=40.0,
-            ts="2025-08-20 20:35:00",
-        ),
-    ]
-
-    demo_strategies = [
-        StrategyItem(code="策略一", title="清水池调蓄提升", reduction_tco2e_per_year=80.0),
-        StrategyItem(code="策略二", title="泵站频率优化", reduction_tco2e_per_year=50.0),
-        StrategyItem(code="策略三", title="提升光伏自用率", reduction_tco2e_per_year=30.0),
-    ]
-
-    demo_eval = LowCarbonEvaluation(
-        yoy_change_pct=90.0,
-        green_power_contrib_tco2e=150.0,
-        carbon_sink_contrib=["光伏", "冷热能", "中水回用"],
-        reduction_potential_tco2e_per_year=300.0,
-        grade="低",
-    )
-
-    return LowCarbonDashboard(
-        realtime=demo_realtime,
-        strategies=demo_strategies,
-        evaluation=demo_eval,
-        hint="预处理碳排较高，建议优化投药与能耗",
-    )
-
-
-# =============== 解析 txt（你上传的“绿色低碳评估.txt”风格） ===============
-def _read_txt() -> Optional[str]:
+def _read_txt() -> str:
     if not os.path.exists(TXT_PATH):
-        return None
+        raise HTTPException(status_code=404, detail="未找到诊断文件: 绿色低碳评估.txt")
     try:
         with open(TXT_PATH, "r", encoding="utf-8") as f:
             return f.read()
     except Exception:
-        return None
+        raise HTTPException(status_code=500, detail="读取诊断文件失败")
 
 
-def _first_match_float(pattern: str, text: str) -> Optional[float]:
-    m = re.search(pattern, text, flags=re.IGNORECASE)
-    if not m:
-        return None
+def _must_float(s: str) -> float:
     try:
-        return float(m.group(1).replace(",", "").strip())
+        return float(str(s).replace(",", "").strip())
     except Exception:
-        return None
+        raise HTTPException(status_code=500, detail=f"数值解析失败: {s}")
 
 
-def _parse_grade(text: str) -> Optional[str]:
-    # 绿色低碳等级: 高
-    m = re.search(r"绿色低碳等级[:：]\s*([^\s]+)", text)
-    return m.group(1).strip() if m else None
+# ==================== 模块1 解析（左：Top5 排名） ====================
+def _parse_realtime_top5(text: str):
+    pattern = r"第(\d+)名:\s*(.*?)\s*-\s*([\d,\.]+)\s*kgCO2e/天"
+    matches = re.findall(pattern, text)
+    if not matches:
+        raise HTTPException(status_code=500, detail="未能解析到实时工艺单元碳排排名数据")
 
+    df = pd.DataFrame(matches, columns=["rank", "process", "emission"])
+    df["rank"] = df["rank"].astype(int)
+    df["emission"] = df["emission"].map(_must_float)
+    df = df.sort_values("rank").head(5)
 
-def _parse_green_power_contrib(text: str) -> Optional[float]:
-    # 绿电碳减排: 39,520 kgCO2e  -> 转 tCO2e
-    kg = _first_match_float(r"绿电碳减排[:：]\s*([\d,\.]+)\s*kg", text)
-    if kg is None:
-        return None
-    return kg / 1000.0
+    return df.to_dict(orient="records")
 
-
-def _parse_reduction_potential(text: str) -> Optional[float]:
-    # 总降碳潜力: 7,922,454 kgCO2e/年 -> 转 tCO2e/年
-    kg = _first_match_float(r"总降碳潜力[:：]\s*([\d,\.]+)\s*kgCO2e/年", text)
-    if kg is None:
-        return None
-    return kg / 1000.0
-
-
-def _parse_strategies(text: str) -> List[StrategyItem]:
-    # 策略1: 清水池调蓄优化 ... 预计降碳: 2,273,923 kgCO2e/年
-    items: List[StrategyItem] = []
-    for idx, code in [(1, "策略一"), (2, "策略二"), (3, "策略三")]:
-        # 标题（策略X: 后面的内容）
+# ==================== 模块2 解析（中：低碳策略） ====================
+def _parse_strategies(text: str):
+    out = []
+    for idx in [1, 2, 3]:
         title_m = re.search(rf"策略{idx}[:：]\s*([^\n\r]+)", text)
-        title = title_m.group(1).strip() if title_m else f"策略{idx}"
+        kg_m = re.search(rf"策略{idx}.*?预计降碳[:：]\s*([\d,\.]+)\s*kgCO2e/年", text, flags=re.S)
 
-        # 预计降碳（kgCO2e/年 -> tCO2e/年）
-        kg = _first_match_float(rf"策略{idx}.*?预计降碳[:：]\s*([\d,\.]+)\s*kgCO2e/年", text)
-        if kg is None:
-            # 兜底：有些文本可能写成 “年降碳量”
-            kg = _first_match_float(rf"策略{idx}.*?年.*?([\d,\.]+)\s*kgCO2e/年", text)
+        if (not title_m) or (not kg_m):
+            raise HTTPException(status_code=500, detail=f"策略{idx}解析失败（标题或预计降碳缺失）")
 
-        if kg is None:
-            continue
+        title = title_m.group(1).strip()
+        kg = _must_float(kg_m.group(1))
 
-        items.append(
-            StrategyItem(
-                code=code,
-                title=title.replace("方法:", "").strip(),
-                reduction_tco2e_per_year=kg / 1000.0,
-            )
-        )
-    return items
+        out.append({"code": f"策略{idx}", "title": title, "kgco2e_y": kg})
+    return out
 
 
-def _build_from_txt(text: str) -> Optional[LowCarbonDashboard]:
-    # txt 里通常能解析：策略、总降碳潜力、绿电贡献、等级
+# ==================== 模块3 解析（右：低碳评估） ====================
+def _parse_evaluation(text: str):
+    green_kg = re.search(r"绿电碳减排[:：]\s*([\d,\.]+)\s*kgCO2e", text)
+    total_kg = re.search(r"总降碳潜力[:：]\s*([\d,\.]+)\s*kgCO2e/年", text)
+    grade_m = re.search(r"绿色低碳等级[:：]\s*([^\s]+)", text)
+
+    if not green_kg or not total_kg or not grade_m:
+        raise HTTPException(status_code=500, detail="未能解析到绿色低碳评估关键字段")
+
+    green_val = _must_float(green_kg.group(1))
+    total_val = _must_float(total_kg.group(1))
+    grade = grade_m.group(1).strip()
+
+    return {
+        "green_kgco2e": green_val,
+        "total_kgco2e_per_year": total_val,
+        "grade": grade
+    }
+
+
+# ======================== 生成 HTML 面板的函数（共用style模板） ========================
+def _wrap_panel(title: str, inner_html: str) -> str:
+    """统一给每个模块套科技蓝卡片面板"""
+    return f"""
+    <div style="
+        margin-bottom:36px;
+        border:1px solid rgba(42,102,255,.36);
+        border-radius:14px;
+        padding:22px 22px 18px 22px;
+        box-shadow:0 0 18px rgba(42,102,255,.14);
+        background:linear-gradient(180deg, rgba(10,18,50,.55), rgba(10,18,50,.32));
+        position:relative;
+        overflow:hidden;
+    ">
+        <div style="font-size:20px; font-weight:800; color:#8cc0ff; margin-bottom:12px; text-shadow:0 0 10px rgba(42,102,255,.25);">
+            {title}
+        </div>
+        <div style="height:2px; background:linear-gradient(90deg, #2a66ff, transparent); margin-bottom:18px;"></div>
+        {inner_html}
+    </div>
+    """
+
+
+# ==================== 左侧模块接口 ====================
+@router.get("/api/dashboard/lowcarbon/realtime", response_class=HTMLResponse)
+def lowcarbon_realtime():
+    text = _read_txt()
+
+    # 提取 Top5 设备碳排排名（含碳排数值）
+    top5 = _parse_realtime_top5(text)
+
+    # 生成排名 HTML（Top5）
+    rows = "".join([f"""
+        <div style="
+            font-size:16px; padding:7px 0;
+            border-left:3px solid rgba(73,179,255,.8);
+            padding-left:12px; margin:10px 0;
+        ">
+            <span style="opacity:.9;">No.{item['rank']}</span>
+            <span style="margin-left:6px;">{item['process']}</span>
+            <span style="float:right; font-weight:800; color:#cfe2ff;">
+                {item['emission']} kgCO2e/天
+            </span>
+        </div>
+    """ for item in top5])
+
+    # 可靠结论文案（你提供的内容）
+    conclusion = """
+    <div style="
+        margin-top:20px;
+        padding:16px;
+        border:1px solid rgba(79,124,255,0.35);
+        border-radius:12px;
+        background:rgba(8,16,42,0.35);
+        font-size:17px;
+        font-weight:900;
+        color:#22e36a;
+        text-shadow:0 0 10px rgba(34,227,106,0.25);
+    ">
+        原水提升泵房（因为其排名第一）碳排较高，建议优化泵房运行策略和设备效率
+    </div>
+    """
+
+    # 组合左侧模块内容（排名 + 结论）
+    inner_html = rows + conclusion
+
+    # 渲染最终页面
+    html = f"""
+    <div style="
+        background: linear-gradient(180deg, #0a0f1f, #121a3a);
+        min-height: 100vh;
+        padding: 40px;
+        font-family: 'Inter', sans-serif;
+        color: #fff;
+    ">
+        <h2 style="text-align:center; font-size:26px; font-weight:900; margin-bottom:40px; text-shadow:0 0 10px #2a66ff;">
+            实时工艺单元碳排与能耗
+        </h2>
+        {_wrap_panel("碳排排名（前五）", inner_html)}
+    </div>
+    """
+    return HTMLResponse(html)
+
+
+# ==================== 中间模块接口 ====================
+@router.get("/api/dashboard/lowcarbon/strategies", response_class=HTMLResponse)
+def lowcarbon_strategies():
+    text = _read_txt()
     strategies = _parse_strategies(text)
-    grade = _parse_grade(text)
-    green_contrib = _parse_green_power_contrib(text)
-    reduction_potential = _parse_reduction_potential(text)
 
-    # 如果关键字段都拿不到，就认为解析失败
-    if not strategies and grade is None and green_contrib is None and reduction_potential is None:
-        return None
+    cards = "".join([f"""
+      <div style="border:1px solid rgba(79,124,255,.35); border-radius:10px; padding:14px; margin:14px 0; background:rgba(8,16,42,.32);">
+        <div style="font-weight:800; font-size:17px; color:#22e36a; text-shadow:0 0 10px rgba(34,227,106,.18);">
+            {s['title']}  →  预计降碳 {s['kgco2e_y']:.0f} kgCO2e/年
+        </div>
+      </div>
+    """ for s in strategies])
 
-    # yoy_change_pct / 碳汇贡献：txt 未必有，给合理默认值（前端可照常渲染）
-    eval_obj = LowCarbonEvaluation(
-        yoy_change_pct=0.0,  # 没有就填 0
-        green_power_contrib_tco2e=float(green_contrib or 0.0),
-        carbon_sink_contrib=["光伏"],  # 没有就给最保守
-        reduction_potential_tco2e_per_year=float(reduction_potential or 0.0),
-        grade=grade or "—",
-    )
-
-    # realtime：txt 不一定有小时级三段数据 -> 用 demo（你也可以后续换成从 Excel/中台读取）
-    demo = _demo_payload()
-
-    hint = "已根据最新诊断结果生成低碳策略与等级"
-    return LowCarbonDashboard(
-        realtime=demo.realtime,
-        strategies=strategies if strategies else demo.strategies,
-        evaluation=eval_obj,
-        hint=hint,
-    )
-
-
-# =============== 对外接口 ===============
-@router.get("/api/dashboard/lowcarbon", response_model=LowCarbonDashboard)
-def get_lowcarbon_dashboard():
+    html = f"""
+    <div style="min-height:100vh; padding:40px; background:linear-gradient(180deg, #07102a, #0b1a44); color:#fff;">
+        <h2 style="text-align:center; font-size:26px; font-weight:900; margin-bottom:40px; text-shadow:0 0 10px #2a66ff;">低碳运行策略推荐</h2>
+        {cards}
+    </div>
     """
-    一次性返回：左+中+右 三块面板数据（推荐前端用这个接口）
-    """
+    return HTMLResponse(html)
+
+
+# ==================== 右侧模块接口 ====================
+@router.get("/api/dashboard/lowcarbon/evaluation", response_class=HTMLResponse)
+def lowcarbon_evaluation():
     text = _read_txt()
-    if text:
-        built = _build_from_txt(text)
-        if built:
-            return built
-    return _demo_payload()
+    ev = _parse_evaluation(text)
 
+    inner = f"""
+        <div style="font-size:18px; padding:8px 0;">碳排年同比变化：<span style="color:#22e36a; font-weight:800;">↑ {ev['grade']}</span></div>
+        <div style="font-size:18px; padding:8px 0;">绿电贡献：<span style="font-weight:800;">{ev['green_kgco2e']:.0f} kgCO2e</span></div>
+        <div style="font-size:18px; padding:8px 0;">预计降碳潜力：<span style="font-weight:800;">{ev['total_kgco2e_per_year']:.0f} kgCO2e/年</span></div>
+        <div style="font-size:20px; padding-top:18px; font-weight:900;">绿色低碳等级：<span style="color:#22e36a; text-shadow:0 0 12px rgba(34,227,106,.25);">{ev['grade']}</span></div>
+    """
 
-@router.get("/api/dashboard/lowcarbon/realtime", response_model=List[RealtimeProcessItem])
-def get_lowcarbon_realtime():
+    html = f"""
+    <div style="min-height:100vh; padding:40px; background:linear-gradient(180deg, #07102a, #0b1a44); color:#fff;">
+        <h2 style="text-align:center; font-size:26px; font-weight:900; margin-bottom:40px; text-shadow:0 0 10px #2a66ff;">绿色低碳评估</h2>
+        {_wrap_panel("评估结果", inner)}
+    </div>
     """
-    左侧：实时工艺单元碳排与能耗
-    """
-    # 目前用 demo；后续你可以改成读 Excel / API / 中台数据
-    return _demo_payload().realtime
-
-
-@router.get("/api/dashboard/lowcarbon/strategies", response_model=List[StrategyItem])
-def get_lowcarbon_strategies():
-    """
-    中间：低碳运行策略推荐
-    """
-    text = _read_txt()
-    if text:
-        items = _parse_strategies(text)
-        if items:
-            return items
-    return _demo_payload().strategies
-
-
-@router.get("/api/dashboard/lowcarbon/evaluation", response_model=LowCarbonEvaluation)
-def get_lowcarbon_evaluation():
-    """
-    右侧：绿色低碳评估
-    """
-    text = _read_txt()
-    if text:
-        built = _build_from_txt(text)
-        if built:
-            return built.evaluation
-    return _demo_payload().evaluation
+    return HTMLResponse(html)
