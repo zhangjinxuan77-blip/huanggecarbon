@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse
 
 router = APIRouter()
 
+# 注意：这里不要有中文句号/注释混在代码里
 base_dir = os.path.dirname(os.path.dirname(__file__))
 TXT_PATH = os.path.join(base_dir, "data", "绿色低碳评估.txt")
 
@@ -34,6 +35,7 @@ def _normalize_text(text: str) -> str:
     """统一全角符号/破折号/冒号，减少regex失败概率"""
     text = text.replace("：", ":")
     text = text.replace("—", "-").replace("–", "-").replace("－", "-")
+    text = text.replace("／", "/")
     return text
 
 
@@ -41,35 +43,49 @@ def _head_snippet(text: str, n: int = 400) -> str:
     return text[:n].replace("\n", "\\n").replace("\r", "\\r")
 
 
+def _section(text: str, start_key: str, end_key: str = None) -> str:
+    """
+    截取 start_key 到 end_key 之间的文本（包含 start_key 之后内容）
+    end_key 为空则取到末尾
+    """
+    text = _normalize_text(text)
+    s = text.find(start_key)
+    if s < 0:
+        raise HTTPException(status_code=500, detail=f"未找到区块起始标记: {start_key}；txt片段={_head_snippet(text)}")
+
+    if end_key:
+        e = text.find(end_key, s + len(start_key))
+        if e < 0:
+            return text[s:]
+        return text[s:e]
+    return text[s:]
+
+
 # ==================== 模块1 解析（左：Top5 排名） ====================
 
 def _parse_realtime_top5(text: str):
     """
-    兼容：
-    - 第1名: XXX - 123 kgCO2e/天
-    - 第 1 名：XXX — 123 kgCO2e/日
-    - kgCO2e/d, tCO2e/天 等
+    只在“各工艺单元日碳排量排名”区块内解析，完全贴合你的 txt：
+    第1名: 原水提升泵房 - 41532.84 kgCO2e/天
     """
-    text = _normalize_text(text)
+    sec = _section(text, "各工艺单元日碳排量排名", "原水提升泵房分析")
 
     pattern = re.compile(
-        r"第\s*(\d+)\s*名\s*:\s*([^\n\r\-]+?)\s*-\s*([\d,]+(?:\.\d+)?)\s*"
-        r"(?:kgCO2e|tCO2e)\s*/\s*(?:天|日|d)",
+        r"第\s*(\d+)\s*名\s*:\s*(.*?)\s*-\s*([\d,]+(?:\.\d+)?)\s*(?:kgCO2e|tCO2e)\s*/\s*(?:天|日|d)",
         flags=re.IGNORECASE
     )
-    matches = pattern.findall(text)
+    matches = pattern.findall(sec)
 
     if not matches:
         raise HTTPException(
             status_code=500,
-            detail=f"未能解析到实时工艺单元碳排排名数据；txt片段={_head_snippet(text)}"
+            detail=f"未能解析到实时工艺单元碳排排名数据；TXT_PATH={TXT_PATH}；区块片段={_head_snippet(sec)}"
         )
 
     df = pd.DataFrame(matches, columns=["rank", "process", "emission"])
     df["rank"] = df["rank"].astype(int)
     df["emission"] = df["emission"].map(_must_float)
     df = df.sort_values("rank").head(5)
-
     return df.to_dict(orient="records")
 
 
@@ -77,38 +93,39 @@ def _parse_realtime_top5(text: str):
 
 def _parse_strategies(text: str):
     """
-    兼容关键字：
-    - 预计降碳 / 预计降碳量 / 预计减排 / 预计减排量 / 年降碳潜力
-    单位兼容：
-    - kgCO2e/年, tCO2e/年, kgCO2e/yr
+    从“低碳运行策略推荐”区块解析（每条策略按块截取）：
+    策略1: 清水池调蓄优化
+    方法: ...
+    预计降碳: 2,273,923 kgCO2e/年
     """
-    text = _normalize_text(text)
+    sec = _section(text, "低碳运行策略推荐", "策略总效果")
+
     out = []
-
     for idx in [1, 2, 3]:
-        title_m = re.search(rf"策略\s*{idx}\s*:\s*([^\n\r]+)", text)
-        if not title_m:
-            raise HTTPException(
-                status_code=500,
-                detail=f"策略{idx}标题解析失败（未找到 '策略{idx}:' 行）；txt片段={_head_snippet(text)}"
-            )
+        # 截取“策略idx:”到“策略idx+1:”之间（或到区块末尾）
+        if idx < 3:
+            block = sec.split(f"策略{idx}:")[-1].split(f"策略{idx+1}:")[0]
+        else:
+            block = sec.split(f"策略{idx}:")[-1]
 
-        title = title_m.group(1).strip()
-
+        title_m = re.search(r"^\s*([^\n\r]+)", block)  # 策略标题是第一行
         kg_m = re.search(
-            rf"策略\s*{idx}[\s\S]{{0,300}}?(?:预计降碳量?|预计减排量?|预计降碳|预计减排|年降碳潜力)\s*:\s*"
-            rf"([\d,]+(?:\.\d+)?)\s*(?:kgCO2e|tCO2e)\s*/\s*(?:年|yr)",
-            text,
+            r"(?:预计降碳量?|预计减排量?|预计降碳|预计减排|年降碳潜力)\s*:\s*([\d,]+(?:\.\d+)?)\s*(?:kgCO2e|tCO2e)\s*/\s*(?:年|yr)",
+            block,
             flags=re.IGNORECASE
         )
-        if not kg_m:
+
+        if (not title_m) or (not kg_m):
             raise HTTPException(
                 status_code=500,
-                detail=f"策略{idx}解析失败（预计降碳缺失或单位不匹配）；txt片段={_head_snippet(text)}"
+                detail=f"策略{idx}解析失败（标题或预计降碳缺失/单位不匹配）；策略区块片段={_head_snippet(block)}"
             )
 
-        kg = _must_float(kg_m.group(1))
-        out.append({"code": f"策略{idx}", "title": title, "kgco2e_y": kg})
+        out.append({
+            "code": f"策略{idx}",
+            "title": title_m.group(1).strip(),
+            "kgco2e_y": _must_float(kg_m.group(1))
+        })
 
     return out
 
@@ -117,36 +134,29 @@ def _parse_strategies(text: str):
 
 def _parse_evaluation(text: str):
     """
-    兼容关键字：
-    - 绿电碳减排/绿电减排/绿电贡献
-    - 总降碳潜力/预计总降碳潜力/年总降碳潜力/预计降碳潜力
-    - 绿色低碳等级/绿色等级/低碳等级/等级
+    从“绿色低碳评估”区块解析：
+    绿电碳减排: 39,520 kgCO2e
+    总降碳潜力: 7,922,454 kgCO2e/年
+    绿色低碳等级: 高 （注意txt里可能出现两次，取最后一次）
     """
-    text = _normalize_text(text)
+    sec = _section(text, "绿色低碳评估", "分析完成!")
 
-    green_kg = re.search(
-        r"(?:绿电碳减排量?|绿电碳减排|绿电减排|绿电贡献)\s*:\s*([\d,]+(?:\.\d+)?)\s*(?:kgCO2e|tCO2e)",
-        text, flags=re.IGNORECASE
-    )
-    total_kg = re.search(
-        r"(?:总降碳潜力|预计总降碳潜力|年总降碳潜力|预计降碳潜力)\s*:\s*([\d,]+(?:\.\d+)?)\s*(?:kgCO2e|tCO2e)\s*/\s*(?:年|yr)",
-        text, flags=re.IGNORECASE
-    )
-    grade_m = re.search(
-        r"(?:绿色低碳等级|绿色等级|低碳等级|等级)\s*:\s*([^\s\r\n]+)",
-        text
-    )
+    green_kg = re.search(r"绿电碳减排\s*:\s*([\d,]+(?:\.\d+)?)\s*(?:kgCO2e|tCO2e)", sec, flags=re.IGNORECASE)
+    total_kg = re.search(r"总降碳潜力\s*:\s*([\d,]+(?:\.\d+)?)\s*(?:kgCO2e|tCO2e)\s*/\s*(?:年|yr)", sec, flags=re.IGNORECASE)
 
-    if not (green_kg and total_kg and grade_m):
+    grades = re.findall(r"绿色低碳等级\s*:\s*([^\s\r\n]+)", sec)
+    grade = grades[-1].strip() if grades else None
+
+    if not (green_kg and total_kg and grade):
         raise HTTPException(
             status_code=500,
-            detail=f"未能解析到绿色低碳评估关键字段；txt片段={_head_snippet(text)}"
+            detail=f"未能解析到绿色低碳评估关键字段；评估区块片段={_head_snippet(sec)}"
         )
 
     return {
         "green_kgco2e": _must_float(green_kg.group(1)),
         "total_kgco2e_per_year": _must_float(total_kg.group(1)),
-        "grade": grade_m.group(1).strip()
+        "grade": grade
     }
 
 
@@ -210,8 +220,6 @@ def lowcarbon_realtime():
     </div>
     """
 
-    inner_html = rows + conclusion
-
     html = f"""
     <div style="
         background: linear-gradient(180deg, #0a0f1f, #121a3a);
@@ -223,7 +231,7 @@ def lowcarbon_realtime():
         <h2 style="text-align:center; font-size:26px; font-weight:900; margin-bottom:40px; text-shadow:0 0 10px #2a66ff;">
             实时工艺单元碳排与能耗
         </h2>
-        {_wrap_panel("碳排排名（前五）", inner_html)}
+        {_wrap_panel("碳排排名（前五）", rows + conclusion)}
     </div>
     """
     return HTMLResponse(html)
@@ -239,7 +247,7 @@ def lowcarbon_strategies():
     cards = "".join([f"""
       <div style="border:1px solid rgba(79,124,255,.35); border-radius:10px; padding:14px; margin:14px 0; background:rgba(8,16,42,.32);">
         <div style="font-weight:800; font-size:17px; color:#22e36a; text-shadow:0 0 10px rgba(34,227,106,.18);">
-            {s['title']}  →  预计降碳 {s['kgco2e_y']:.0f} kgCO2e/年
+            {s['title']}  →  预计降碳 {s['kgco2e_y']:,.0f} kgCO2e/年
         </div>
       </div>
     """ for s in strategies])
@@ -262,8 +270,8 @@ def lowcarbon_evaluation():
 
     inner = f"""
         <div style="font-size:18px; padding:8px 0;">碳排年同比变化：<span style="color:#22e36a; font-weight:800;">↑ {ev['grade']}</span></div>
-        <div style="font-size:18px; padding:8px 0;">绿电贡献：<span style="font-weight:800;">{ev['green_kgco2e']:.0f} kgCO2e</span></div>
-        <div style="font-size:18px; padding:8px 0;">预计降碳潜力：<span style="font-weight:800;">{ev['total_kgco2e_per_year']:.0f} kgCO2e/年</span></div>
+        <div style="font-size:18px; padding:8px 0;">绿电贡献：<span style="font-weight:800;">{ev['green_kgco2e']:,.0f} kgCO2e</span></div>
+        <div style="font-size:18px; padding:8px 0;">预计降碳潜力：<span style="font-weight:800;">{ev['total_kgco2e_per_year']:,.0f} kgCO2e/年</span></div>
         <div style="font-size:20px; padding-top:18px; font-weight:900;">绿色低碳等级：<span style="color:#22e36a; text-shadow:0 0 12px rgba(34,227,106,.25);">{ev['grade']}</span></div>
     """
 
