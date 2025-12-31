@@ -31,8 +31,13 @@ from modules.process_inner_清水处理段 import router as process_inner_清水
 from modules.process_outer_原水取水段 import router as process_outer_原水取水段_router
 
 # ===== Diagnosis =====
-from modules.diagnosis_raw_text import router as diag_router
+from modules.diagnosis_page import router as diag_router
 
+# ===== lowcarbon =====
+from modules.lowcarbon import router as lowcarbon_router
+
+# ===== network =====
+from modules.network_carbon_points import router as network_router
 
 app = FastAPI(title="Carbon API", version="1.0.0")
 
@@ -70,6 +75,9 @@ app.include_router(process_outer_原水取水段_router)
 
 app.include_router(diag_router)
 
+app.include_router(lowcarbon_router)
+
+app.include_router(network_router)
 
 @app.get("/api/_health")
 def health():
