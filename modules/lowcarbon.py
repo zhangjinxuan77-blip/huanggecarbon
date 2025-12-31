@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
+import os, re
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
-import os, re, pandas as pd
 
 router = APIRouter()
 
-# 诊断文件路径（严格用这个）
-TXT_PATH = "/mnt/data/绿色低碳评估.txt"
+base_dir = os.path.dirname(os.path.dirname(__file__))
+TXT_PATH = os.path.join(base_dir, "data", "碳排诊断输出.txt")
+
+
 
 
 def _read_txt() -> str:

@@ -12,6 +12,7 @@ from typing import List, Dict, Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from modules.common import format_float_2d
 
 router = APIRouter()
 
@@ -107,9 +108,9 @@ def network_points_carbon(body: TimeBody) -> Dict[str, Any]:
             "monitorTime": "" if pd.isna(t) else t.strftime("%Y-%m-%d %H:%M:%S"),
         })
 
-    return {
+    return format_float_2d({
         "timeType": time_type,
         "sheet": SHEET_MAP[time_type],
         "count": len(items),
         "data": items
-    }
+    })
