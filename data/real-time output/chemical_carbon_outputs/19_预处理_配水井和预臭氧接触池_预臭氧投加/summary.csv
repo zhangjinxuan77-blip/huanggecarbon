@@ -1,0 +1,5 @@
+﻿summary_period,source_file,summary_level,row_count,start_time,end_time,O3_PRE_L1_raw_value_sum,O3_PRE_L1_chemical_kg_sum,O3_PRE_L1_carbon_kg_sum,O3_PRE_L2_raw_value_sum,O3_PRE_L2_chemical_kg_sum,O3_PRE_L2_carbon_kg_sum,O3_PRE_L3_raw_value_sum,O3_PRE_L3_chemical_kg_sum,O3_PRE_L3_carbon_kg_sum,O3_PRE_L4_raw_value_sum,O3_PRE_L4_chemical_kg_sum,O3_PRE_L4_carbon_kg_sum,unit_total_chemical_kg_sum,unit_total_carbon_kg_sum
+latest_24h_hourly,hourly.csv,total,24,2026-05-10 02:00:00+00:00,2026-05-11 01:00:00+00:00,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+latest_7d_daily,daily.csv,total,7,2026-05-05 00:00:00+00:00,2026-05-11 00:00:00+00:00,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+latest_5w_weekly,weekly.csv,total,5,2026-04-19 00:00:00+00:00,2026-05-17 00:00:00+00:00,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+latest_12m_monthly,monthly.csv,total,12,2025-06-30 00:00:00+00:00,2026-05-31 00:00:00+00:00,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0

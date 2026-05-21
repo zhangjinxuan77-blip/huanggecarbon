@@ -1,0 +1,5 @@
+﻿summary_period,source_file,summary_level,row_count,start_time,end_time,JYB1_runtime_h_sum,JYB1_power_kW_sum,JYB1_energy_kWh_sum,JYB1_carbon_kg_sum,JYB2_runtime_h_sum,JYB2_power_kW_sum,JYB2_energy_kWh_sum,JYB2_carbon_kg_sum,JYB3_runtime_h_sum,JYB3_power_kW_sum,JYB3_energy_kWh_sum,JYB3_carbon_kg_sum,unit_total_energy_kWh_sum,unit_total_carbon_kg_sum
+latest_24h_hourly,hourly.csv,total,24,2026-05-10 02:00:00+00:00,2026-05-11 01:00:00+00:00,0.0,9.600000000000001,0.0,0.0,0.0,9.600000000000001,0.0,0.0,0.0,9.600000000000001,0.0,0.0,0.0,0.0
+latest_7d_daily,daily.csv,total,7,2026-05-05 00:00:00+00:00,2026-05-11 00:00:00+00:00,0.0,58.4,0.0,0.0,0.0,58.4,0.0,0.0,0.0,58.4,0.0,0.0,0.0,0.0
+latest_5w_weekly,weekly.csv,total,5,2026-04-19 00:00:00+00:00,2026-05-17 00:00:00+00:00,0.0,269.6,0.0,0.0,0.0,269.6,0.0,0.0,0.0,269.6,0.0,0.0,0.0,0.0
+latest_12m_monthly,monthly.csv,total,12,2025-06-30 00:00:00+00:00,2026-05-31 00:00:00+00:00,0.0,3206.0000000000005,0.0,0.0,0.0,3206.0000000000005,0.0,0.0,0.0,3206.0000000000005,0.0,0.0,0.0,0.0

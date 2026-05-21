@@ -1,113 +1,106 @@
 # -*- coding: utf-8 -*-
 """
-工艺段碳排量（支持 timeType：日/周/月/年）
-读取 《范围2_水厂内外_分段与单元.xlsx》 的：
- - 水厂内_分段
- - 水厂外_分段
-按照 timeType 选择：合计_日 / 合计_周 / 合计_月 / 合计_年
+工艺段碳排量
+接口：POST /api/process/section_total
+入参：{"timeType":1}，1=日, 2=周, 3=月, 4=年
+数据源：data/real-time output/process_stage_outputs/工艺段汇总/summary.csv
 """
 
+import os
+
+import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-import pandas as pd
-import os
+
+from modules.common import format_float_2d
+
 
 router = APIRouter()
 
-# ========= 入参 =========
+
 class TimeBody(BaseModel):
-    timeType: int   # 1=日，2=周，3=月，4=年
+    timeType: int
 
-# ========= 配置 =========
+
 APP_DIR = os.path.dirname(os.path.dirname(__file__))
-EXCEL_PATH = os.path.join(APP_DIR, "data", "范围2_水厂内外_分段与单元.xlsx")
+SUMMARY_PATH = os.path.join(
+    APP_DIR,
+    "data",
+    "real-time output",
+    "process_stage_outputs",
+    "工艺段汇总",
+    "summary.csv",
+)
 
-INNER_SHEET = "水厂内_分段"
-OUTER_SHEET = "水厂外_分段"
+TIME_CONFIG = {
+    1: "latest_24h_hourly",
+    2: "latest_7d_daily",
+    3: "latest_5w_weekly",
+    4: "latest_12m_monthly",
+}
 
-# ========= 缓存 =========
-_TABLE_CACHE = None
+STAGE_LABELS = {
+    "01_原水取水段": "原水取水",
+    "02_供水段": "供水",
+    "03_预处理": "预处理",
+    "04_混凝沉淀": "混凝沉淀",
+    "05_过滤": "过滤",
+    "06_深度处理": "深度处理",
+    "07_污泥处理": "污泥处理",
+}
 
-# ========= 表加载 =========
-def _load_tables():
-    """读取两个 sheet 并缓存"""
-    global _TABLE_CACHE
-    if _TABLE_CACHE is not None:
-        return _TABLE_CACHE
+STAGE_ORDER = list(STAGE_LABELS.keys())
 
-    if not os.path.exists(EXCEL_PATH):
-        raise HTTPException(500, f"Excel 文件不存在: {EXCEL_PATH}")
+
+def _load_summary() -> pd.DataFrame:
+    if not os.path.exists(SUMMARY_PATH):
+        raise HTTPException(status_code=500, detail=f"文件不存在：{SUMMARY_PATH}")
 
     try:
-        df_in = pd.read_excel(EXCEL_PATH, sheet_name=INNER_SHEET)
-        df_out = pd.read_excel(EXCEL_PATH, sheet_name=OUTER_SHEET)
-    except Exception as e:
-        raise HTTPException(500, f"Excel 加载失败: {e}")
+        df = pd.read_csv(SUMMARY_PATH, encoding="utf-8-sig")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"CSV 读取失败：{SUMMARY_PATH}，{exc}")
 
-    required_cols = ["工艺段", "合计_日", "合计_周", "合计_月", "合计_年"]
-    for name, df in [("水厂内_分段", df_in), ("水厂外_分段", df_out)]:
-        for c in required_cols:
-            if c not in df.columns:
-                raise HTTPException(500, f"Sheet「{name}」缺少字段: {c}")
+    required = ["summary_period", "summary_level", "process_stage", "stage_total_carbon_kg_latest"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise HTTPException(status_code=500, detail=f"CSV 缺少字段：{missing}")
 
-    df_in = df_in.set_index("工艺段")
-    df_out = df_out.set_index("工艺段")
+    df["stage_total_carbon_kg_latest"] = pd.to_numeric(
+        df["stage_total_carbon_kg_latest"],
+        errors="coerce",
+    ).fillna(0.0)
+    return df
 
-    _TABLE_CACHE = (df_in, df_out)
-    return _TABLE_CACHE
 
-# ========= 构造结果 =========
-def _build_source(timeType: int):
-    """根据 timeType 生成 source 列表"""
+def _source(time_type: int) -> list[dict]:
+    summary_period = TIME_CONFIG.get(time_type)
+    if not summary_period:
+        raise HTTPException(status_code=400, detail="timeType 只能是 1(日)/2(周)/3(月)/4(年)")
 
-    type_map = {
-        1: "合计_日",
-        2: "合计_周",
-        3: "合计_月",
-        4: "合计_年"
-    }
-
-    col = type_map.get(timeType)
-    if not col:
-        raise HTTPException(400, "timeType 只能是 1(日)/2(周)/3(月)/4(年)")
-
-    df_in, df_out = _load_tables()
-    sections = sorted(set(df_in.index) | set(df_out.index))
+    df = _load_summary()
+    rows = df[
+        (df["summary_period"] == summary_period)
+        & (df["summary_level"] == "detail")
+    ].copy()
 
     source = []
-    for sec in sections:
-        v = 0.0
-        if sec in df_in.index:
-            v += float(df_in.at[sec, col])
-        if sec in df_out.index:
-            v += float(df_out.at[sec, col])
-
-        source.append({
-            "name": str(sec),
-            "data": v
-        })
-
+    for stage in STAGE_ORDER:
+        row = rows[rows["process_stage"] == stage]
+        value = float(row["stage_total_carbon_kg_latest"].iloc[0]) if not row.empty else 0.0
+        source.append({"name": STAGE_LABELS[stage], "data": value})
     return source
 
-# ========= API =========
+
 @router.post("/api/process/section_total")
 def process_section_total(body: TimeBody):
-    """
-    工艺段碳排量（根据 timeType 返回 日/周/月/年）
-    """
-    try:
-        source = _build_source(body.timeType)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, f"数据处理失败: {e}")
-
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
+            "unit": "kgCO2e",
             "dimensions": ["name", "data"],
-            "source": source,
-            "dimensionsMapping": ["name", "data"]
-        }
-    }
+            "source": _source(int(body.timeType)),
+            "dimensionsMapping": ["name", "data"],
+        },
+    })

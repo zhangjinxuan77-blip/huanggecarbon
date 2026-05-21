@@ -1,130 +1,106 @@
 # -*- coding: utf-8 -*-
 """
-工艺段碳排放结构（占比）
-接口：/api/process/section/share
-入参：{"timeType":1}   # 1=日, 2=周, 3=月, 4=年
-
-读取：
-  data/范围2_水厂内外_分段与单元.xlsx
-    - Sheet：水厂内_分段
-    - Sheet：水厂外_分段
-
-根据 timeType 选择：占比_日 / 占比_周 / 占比_月 / 占比_年
-合并相同工艺段（水厂内+水厂外），输出前端要求格式。
+工艺段碳排放结构占比
+接口：POST /api/process/section_share
+入参：{"timeType":1}，1=日, 2=周, 3=月, 4=年
+数据源：data/real-time output/process_stage_outputs/工艺段汇总/summary.csv
 """
 
+import os
+
+import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-import pandas as pd
-import os
+
+from modules.common import format_float_2d
+
 
 router = APIRouter()
 
 
-# ========= 入参模型 =========
 class TimeBody(BaseModel):
-    timeType: int  # 1=日，2=周，3=月，4=年
+    timeType: int
 
 
-# ========= 路径配置 =========
 APP_DIR = os.path.dirname(os.path.dirname(__file__))
-EXCEL_PATH = os.path.join(APP_DIR, "data", "范围2_水厂内外_分段与单元.xlsx")
+SUMMARY_PATH = os.path.join(
+    APP_DIR,
+    "data",
+    "real-time output",
+    "process_stage_outputs",
+    "工艺段汇总",
+    "summary.csv",
+)
 
-INNER_SHEET = "水厂内_分段"
-OUTER_SHEET = "水厂外_分段"
+TIME_CONFIG = {
+    1: "latest_24h_hourly",
+    2: "latest_7d_daily",
+    3: "latest_5w_weekly",
+    4: "latest_12m_monthly",
+}
+
+STAGE_LABELS = {
+    "01_原水取水段": "原水取水",
+    "02_供水段": "供水",
+    "03_预处理": "预处理",
+    "04_混凝沉淀": "混凝沉淀",
+    "05_过滤": "过滤",
+    "06_深度处理": "深度处理",
+    "07_污泥处理": "污泥处理",
+}
+
+STAGE_ORDER = list(STAGE_LABELS.keys())
 
 
-# ========= 简单缓存 =========
-_SHARE_TABLE_CACHE = None
-
-
-def _load_share_tables():
-    """
-    读取两个 sheet，并检查必需字段是否存在。
-    返回 (df_inner, df_outer)，索引统一为“工艺段”。
-    """
-    global _SHARE_TABLE_CACHE
-    if _SHARE_TABLE_CACHE is not None:
-        return _SHARE_TABLE_CACHE
-
-    if not os.path.exists(EXCEL_PATH):
-        raise HTTPException(500, f"Excel 文件不存在: {EXCEL_PATH}")
+def _load_summary() -> pd.DataFrame:
+    if not os.path.exists(SUMMARY_PATH):
+        raise HTTPException(status_code=500, detail=f"文件不存在：{SUMMARY_PATH}")
 
     try:
-        df_in = pd.read_excel(EXCEL_PATH, sheet_name=INNER_SHEET)
-        df_out = pd.read_excel(EXCEL_PATH, sheet_name=OUTER_SHEET)
-    except Exception as e:
-        raise HTTPException(500, f"Excel 加载失败: {e}")
+        df = pd.read_csv(SUMMARY_PATH, encoding="utf-8-sig")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"CSV 读取失败：{SUMMARY_PATH}，{exc}")
 
-    # 必须包含这些字段
-    required_cols = ["工艺段", "占比_日", "占比_周", "占比_月", "占比_年"]
-    for name, df in [("水厂内_分段", df_in), ("水厂外_分段", df_out)]:
-        for c in required_cols:
-            if c not in df.columns:
-                raise HTTPException(500, f"Sheet「{name}」缺少字段: {c}")
+    required = ["summary_period", "summary_level", "process_stage", "stage_share_of_plant_avg"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise HTTPException(status_code=500, detail=f"CSV 缺少字段：{missing}")
 
-    # 统一用工艺段做索引
-    df_in = df_in.set_index("工艺段")
-    df_out = df_out.set_index("工艺段")
-
-    _SHARE_TABLE_CACHE = (df_in, df_out)
-    return _SHARE_TABLE_CACHE
+    df["stage_share_of_plant_avg"] = pd.to_numeric(
+        df["stage_share_of_plant_avg"],
+        errors="coerce",
+    ).fillna(0.0)
+    return df
 
 
-def _build_share_source(timeType: int):
-    """
-    根据 timeType 构造占比结构的 source 列表。
-    """
-    col_map = {
-        1: "占比_日",
-        2: "占比_周",
-        3: "占比_月",
-        4: "占比_年",
-    }
-    col = col_map.get(timeType)
-    if not col:
-        raise HTTPException(400, "timeType 只能是 1(日)/2(周)/3(月)/4(年)")
+def _source(time_type: int) -> list[dict]:
+    summary_period = TIME_CONFIG.get(time_type)
+    if not summary_period:
+        raise HTTPException(status_code=400, detail="timeType 只能是 1(日)/2(周)/3(月)/4(年)")
 
-    df_in, df_out = _load_share_tables()
-
-    # 收集所有工艺段名称（水厂内 + 水厂外 的并集）
-    sections = sorted(set(df_in.index) | set(df_out.index))
+    df = _load_summary()
+    rows = df[
+        (df["summary_period"] == summary_period)
+        & (df["summary_level"] == "detail")
+    ].copy()
 
     source = []
-    for sec in sections:
-        val = 0.0
-        if sec in df_in.index:
-            val += float(df_in.at[sec, col])
-        if sec in df_out.index:
-            val += float(df_out.at[sec, col])
-
-        source.append({
-            "name": str(sec),
-            "data": val,  # 已经是占比（百分数），直接给前端
-        })
-
+    for stage in STAGE_ORDER:
+        row = rows[rows["process_stage"] == stage]
+        value = float(row["stage_share_of_plant_avg"].iloc[0]) * 100.0 if not row.empty else 0.0
+        source.append({"name": STAGE_LABELS[stage], "data": value})
     return source
 
 
 @router.post("/api/process/section_share")
 def process_section_share(body: TimeBody):
-    """
-    工艺段碳排放结构（占比）
-    入参：{"timeType":1}  # 1=日, 2=周, 3=月, 4=年
-    """
-    try:
-        source = _build_share_source(body.timeType)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, f"数据处理失败: {e}")
-
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
+            "unit": "%",
             "dimensions": ["name", "data"],
-            "source": source,
+            "source": _source(int(body.timeType)),
             "dimensionsMapping": ["name", "data"],
         },
-    }
+    })

@@ -1,280 +1,270 @@
 # -*- coding: utf-8 -*-
-"""
-厂内-预处理段相关接口
-- 预处理段碳排信息       /api/process/inner/预处理/info          (GET)
-- 预处理段碳排趋势       /api/process/inner/预处理/trend         (POST)
-- 预处理段碳排占比       /api/process/inner/预处理/share         (GET)
-
-Excel：data/范围2_水厂内外_分段与单元.xlsx
-sheet：
-  - 水厂内_分段   => 按工艺段汇总
-  - 水厂内_分单元 => 按工艺单元汇总
-"""
 
 import os
-from typing import Optional, Dict, Any
+from typing import Any, Dict
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+
 router = APIRouter()
 
 
-# ========= 入参模型 =========
-
 class TrendBody(BaseModel):
-    qtype: int      # 1=配水井+预臭氧接触池；2=加药间
-    timeType: int   # 1=日，2=周、3=月、4=年
+    qtype: int
+    timeType: int
 
 
-# ========= 全局缓存 =========
+class TimeBody(BaseModel):
+    timeType: int = 4
 
-_SECTION_TABLE: Optional[pd.DataFrame] = None   # 水厂内_分段
-_UNIT_TABLE: Optional[pd.DataFrame] = None      # 水厂内_分单元
 
-EXCEL_PATH = os.path.join("data", "范围2_水厂内外_分段与单元.xlsx")
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+DATA_DIR = os.path.join(
+    BASE_DIR,
+    "data",
+    "real-time output",
+    "process_stage_outputs",
+    "03_预处理",
+)
 
-# timeType -> “日/周/月/年”
-TIME_MAP: Dict[int, str] = {
-    1: "日",
-    2: "周",
-    3: "月",
-    4: "年",
+CARBON_UNIT = "kgCO2e"
+SHARE_UNIT = "%"
+
+TIME_CONFIG = {
+    1: {"label": "日", "summary_period": "latest_24h_hourly", "trend_file": "latest_24h_hourly.csv"},
+    2: {"label": "周", "summary_period": "latest_7d_daily", "trend_file": "latest_7d_daily.csv"},
+    3: {"label": "月", "summary_period": "latest_5w_weekly", "trend_file": "latest_5w_weekly.csv"},
+    4: {"label": "年", "summary_period": "latest_12m_monthly", "trend_file": "latest_12m_monthly.csv"},
 }
 
-# timeType -> 水厂内_分单元里的合计列名
-TIME_COL_MAP: Dict[int, str] = {
-    1: "合计_日",
-    2: "合计_周",
-    3: "合计_月",
-    4: "合计_年",
+UNIT_MAP = {
+    1: "预处理_配水井和预臭氧接触池",
+    2: "预处理_加药间",
+}
+
+DISPLAY_UNIT_MAP = {
+    "预处理_配水井和预臭氧接触池": "配水井和预臭氧接触池",
+    "预处理_加药间": "加药间",
 }
 
 
-# ========= 读表工具函数 =========
+def _sig2(value: Any) -> float:
+    """保留两位有效数字。"""
+    try:
+        return float(f"{float(value):.2g}")
+    except Exception:
+        return 0.0
 
-def load_section_table() -> pd.DataFrame:
-    """读取 sheet《水厂内_分段》（仅加载一次，后续使用缓存）"""
-    global _SECTION_TABLE
-    if _SECTION_TABLE is not None:
-        return _SECTION_TABLE
+
+def _fmt(value: Any, unit: str) -> str:
+    return f"{_sig2(value):g} {unit}" if unit != SHARE_UNIT else f"{_sig2(value):g}{unit}"
+
+
+def _round_obj(obj: Any) -> Any:
+    if isinstance(obj, dict):
+        return {k: _round_obj(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_round_obj(v) for v in obj]
+    if isinstance(obj, float):
+        return _sig2(obj)
+    return obj
+
+
+def _time_config(time_type: int) -> dict:
+    config = TIME_CONFIG.get(time_type)
+    if not config:
+        raise HTTPException(status_code=400, detail="timeType 只能是 1(日)/2(周)/3(月)/4(年)")
+    return config
+
+
+def _read_csv(filename: str) -> pd.DataFrame:
+    path = os.path.join(DATA_DIR, filename)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=500, detail=f"文件不存在：{path}")
 
     try:
-        df = pd.read_excel(EXCEL_PATH, sheet_name="水厂内_分段")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Excel(水厂内_分段)加载失败: {e}")
+        df = pd.read_csv(path, encoding="utf-8-sig")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"CSV 读取失败：{path}，{exc}")
 
-    required_cols = [
-        "工艺段",
-        "合计_日", "合计_周", "合计_月", "合计_年",
-        "电耗_日", "电耗_周", "电耗_月", "电耗_年",
-        "药耗_日", "药耗_周", "药耗_月", "药耗_年",
-    ]
-    for c in required_cols:
-        if c not in df.columns:
-            raise HTTPException(status_code=500, detail=f"水厂内_分段 缺少字段：{c}")
+    if df.empty:
+        raise HTTPException(status_code=404, detail=f"CSV 没有数据：{path}")
 
-    _SECTION_TABLE = df
     return df
 
 
-def load_unit_table() -> pd.DataFrame:
-    """读取 sheet《水厂内_分单元》（仅加载一次，后续使用缓存）"""
-    global _UNIT_TABLE
-    if _UNIT_TABLE is not None:
-        return _UNIT_TABLE
+def _ensure_columns(df: pd.DataFrame, columns: list[str]) -> None:
+    missing = [c for c in columns if c not in df.columns]
+    if missing:
+        raise HTTPException(status_code=500, detail=f"CSV 缺少字段：{missing}")
 
-    try:
-        df = pd.read_excel(EXCEL_PATH, sheet_name="水厂内_分单元")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Excel(水厂内_分单元)加载失败: {e}")
 
-    if "工艺段" not in df.columns or "工艺单元" not in df.columns:
-        raise HTTPException(status_code=500, detail="水厂内_分单元 缺少字段：工艺段/工艺单元")
+def _summary_rows(time_type: int) -> pd.DataFrame:
+    config = _time_config(time_type)
+    df = _read_csv("summary.csv")
+    required = [
+        "summary_period",
+        "summary_level",
+        "process_unit",
+        "electric_carbon_kg_sum",
+        "chemical_carbon_kg_sum",
+        "unit_total_carbon_kg_sum",
+        "unit_share_within_stage_avg",
+    ]
+    _ensure_columns(df, required)
 
-    # 把合计/电耗/药耗的日周月年列全部转成 float，避免后面求和出问题
-    for prefix in ["合计", "电耗", "药耗"]:
-        for suff in ["日", "周", "月", "年"]:
-            col = f"{prefix}_{suff}"
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+    rows = df[df["summary_period"] == config["summary_period"]].copy()
+    if rows.empty:
+        raise HTTPException(status_code=404, detail=f"summary.csv 未找到：{config['summary_period']}")
 
-    _UNIT_TABLE = df
+    numeric_cols = [
+        "electric_carbon_kg_sum",
+        "chemical_carbon_kg_sum",
+        "unit_total_carbon_kg_sum",
+        "unit_share_within_stage_avg",
+    ]
+    for col in numeric_cols:
+        rows[col] = pd.to_numeric(rows[col], errors="coerce").fillna(0.0)
+
+    return rows
+
+
+def _summary_detail_rows(time_type: int) -> pd.DataFrame:
+    rows = _summary_rows(time_type)
+    return rows[rows["summary_level"] == "detail"].copy()
+
+
+def _summary_total_row(time_type: int) -> pd.Series:
+    rows = _summary_rows(time_type)
+    total_rows = rows[rows["summary_level"] == "total"]
+    if total_rows.empty:
+        raise HTTPException(status_code=404, detail="summary.csv 未找到 total 汇总行")
+    return total_rows.iloc[0]
+
+
+def _trend_table(time_type: int) -> pd.DataFrame:
+    config = _time_config(time_type)
+    df = _read_csv(config["trend_file"])
+    required = [
+        "period_start",
+        "process_unit",
+        "electric_carbon_kg",
+        "chemical_carbon_kg",
+        "unit_total_carbon_kg",
+    ]
+    _ensure_columns(df, required)
+
+    df = df.copy()
+    df["period_start"] = pd.to_datetime(df["period_start"], errors="coerce")
+    df = df.sort_values("period_start")
+    for col in ["electric_carbon_kg", "chemical_carbon_kg", "unit_total_carbon_kg"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
     return df
 
 
-# ========= 公共小函数 =========
-
-def _select_pretreat_units() -> Dict[str, pd.DataFrame]:
-    """
-    从《水厂内_分单元》中筛选预处理段下的两个单元：
-    - 配水井和预臭氧接触池
-    - 加药间
-    返回 dict: {"well_ozone": df1, "hypo": df2}
-    """
-    df = load_unit_table()
-
-    pretreat = df[df["工艺段"] == "预处理段"].copy()
-    if pretreat.empty:
-        raise HTTPException(status_code=500, detail="未在水厂内_分单元中找到“预处理段”记录")
-
-    well_ozone = pretreat[
-        pretreat["工艺单元"].astype(str).str.contains("配水井和预臭氧接触池")
-    ]
-    hypo = pretreat[
-        pretreat["工艺单元"].astype(str).str.contains("加药间")
-    ]
-
-    return {"well_ozone": well_ozone, "hypo": hypo}
+def _format_time(value: Any, time_type: int) -> str:
+    dt = pd.to_datetime(value, errors="coerce")
+    if pd.isna(dt):
+        return str(value)
+    if time_type == 1:
+        return dt.strftime("%H:%M")
+    if time_type in (2, 3):
+        return dt.strftime("%m-%d")
+    return f"{dt.month}月"
 
 
-def _period_suffix(time_type: int) -> str:
-    """timeType -> ‘日/周/月/年’ 后缀"""
-    if time_type not in TIME_MAP:
-        raise HTTPException(status_code=400, detail="timeType 只能是 1(日)/2(周)/3(月)/4(年)")
-    return TIME_MAP[time_type]
+def _pretreat_info_payload(timeType: int) -> Dict[str, Any]:
+    config = _time_config(timeType)
+    total = _summary_total_row(timeType)
+    details = _summary_detail_rows(timeType)
 
+    def value_for(unit_name: str) -> float:
+        row = details[details["process_unit"] == unit_name]
+        if row.empty:
+            return 0.0
+        return float(row.iloc[0]["unit_total_carbon_kg_sum"])
 
-# ========= 1) 厂内-预处理段-碳排信息 =========
+    total_value = float(total["unit_total_carbon_kg_sum"])
+    well_value = value_for("预处理_配水井和预臭氧接触池")
+    dosing_value = value_for("预处理_加药间")
 
-@router.get("/api/process/inner/预处理/info")
-def pretreat_info(
-    timeType: int = Query(
-        4, description="1=日, 2=周, 3=月, 4=年（默认按年）"
-    )
-) -> Dict[str, Any]:
-    """
-    预处理段碳排信息（数据来源：水厂内_分单元）：
-    - totalCarbonEmissions:
-        工艺段 = 预处理段 的所有单元，在合计_日/周/月/年 中的合计
-    - distributionWellPreOzoneContactTankCE:
-        工艺段 = 预处理段，工艺单元 = 配水井和预臭氧接触池 的合计
-    - dosingRoomCE:
-        工艺段 = 预处理段，工艺单元 = 加药间 的合计
-    """
-    if timeType not in TIME_COL_MAP:
-        raise HTTPException(status_code=400, detail="timeType 只能是 1(日)/2(周)/3(月)/4(年)")
-
-    df = load_unit_table()
-    col = TIME_COL_MAP[timeType]
-
-    # 只看预处理段
-    pre = df[df["工艺段"] == "预处理段"].copy()
-    if pre.empty:
-        raise HTTPException(status_code=404, detail="Excel 未找到工艺段：预处理段")
-
-    # 预处理段总碳排（所有单元求和）
-    total = float(pre[col].sum())
-
-    # 配水井和预臭氧接触池 —— 直接取这一行的值
-    well_row = pre[pre["工艺单元"] == "配水井和预臭氧接触池"]
-    if not well_row.empty:
-        distribution_well_ozone = float(well_row[col].iloc[0])
-    else:
-        distribution_well_ozone = 0.0
-
-    # 加药间 —— 直接取这一行的值
-    dosing_row = pre[pre["工艺单元"] == "加药间"]
-    if not dosing_row.empty:
-        dosing_room = float(dosing_row[col].iloc[0])
-    else:
-        dosing_room = 0.0
-
-    return {
+    result = {
         "code": 0,
         "msg": "",
         "data": {
-            "totalCarbonEmissions": total,
-            "distributionWellPreOzoneContactTankCE": distribution_well_ozone,
-            "dosingRoomCE": dosing_room,
+            "unit": CARBON_UNIT,
+            "totalCarbonEmissions": total_value,
+            "totalCarbonEmissionsWithUnit": _fmt(total_value, CARBON_UNIT),
+            "distributionWellPreOzoneContactTankCE": well_value,
+            "distributionWellPreOzoneContactTankCEWithUnit": _fmt(well_value, CARBON_UNIT),
+            "sodiumHypochloriteRoomCE": dosing_value,
+            "sodiumHypochloriteRoomCEWithUnit": _fmt(dosing_value, CARBON_UNIT),
         },
     }
+    return _round_obj(result)
 
 
-# ========= 2) 厂内-预处理段-碳排趋势 =========
+@router.get("/api/process/inner/预处理/info")
+def pretreat_info(timeType: int = Query(4)) -> Dict[str, Any]:
+    return _pretreat_info_payload(timeType)
+
+
+@router.post("/api/process/inner/预处理/info")
+def pretreat_info_post(body: TimeBody) -> Dict[str, Any]:
+    return _pretreat_info_payload(int(body.timeType))
+
 
 @router.post("/api/process/inner/预处理/trend")
 def pretreat_trend(body: TrendBody) -> Dict[str, Any]:
-    """
-    qtype:
-      1 = 配水井+预臭氧接触池
-      2 = 加药间
-    timeType:
-      1=日，2=周、3=月、4=年
+    config = _time_config(body.timeType)
+    if body.qtype not in UNIT_MAP:
+        raise HTTPException(status_code=400, detail="qtype 只能是 1 或 2")
 
-    Excel 目前是“日/周/月/年”的汇总值，没有逐日序列，
-    这里按选定周期返回一组数据点：
-      xAxis: [ "日" / "周" / "月" / "年" ]
-      series:
-        - 总碳排
-        - 电耗碳排
-        - 药耗碳排
-    """
-    suffix = _period_suffix(body.timeType)  # 日/周/月/年
-    unit_dict = _select_pretreat_units()
+    unit_name = UNIT_MAP[body.qtype]
+    target = _trend_table(body.timeType)
+    target = target[target["process_unit"] == unit_name].copy()
 
-    if body.qtype == 1:
-        target_df = unit_dict["well_ozone"]
-        dev_name = "配水井和预臭氧接触池"
-    elif body.qtype == 2:
-        target_df = unit_dict["hypo"]
-        dev_name = "加药间"
-    else:
-        raise HTTPException(status_code=400, detail="qtype 只能是 1(配水井+预臭氧) 或 2(加药间)")
+    if target.empty:
+        raise HTTPException(status_code=404, detail=f"未找到工艺单元：{unit_name}")
 
-    if target_df.empty:
-        raise HTTPException(status_code=404, detail=f"未在水厂内_分单元中找到 {dev_name} 的数据")
+    x_data = [_format_time(v, body.timeType) for v in target["period_start"].tolist()]
+    total_data = target["unit_total_carbon_kg"].tolist()
+    electric_data = target["electric_carbon_kg"].tolist()
+    chemical_data = target["chemical_carbon_kg"].tolist()
 
-    col_total = f"合计_{suffix}"
-    col_elec = f"电耗_{suffix}"
-    col_chem = f"药耗_{suffix}"
-
-    for c in [col_total, col_elec, col_chem]:
-        if c not in target_df.columns:
-            raise HTTPException(status_code=500, detail=f"水厂内_分单元 缺少字段：{c}")
-
-    total_val = float(target_df[col_total].sum())
-    elec_val = float(target_df[col_elec].sum())
-    chem_val = float(target_df[col_chem].sum())
-
-    period_label = suffix  # 直接用“日/周/月/年”作为 x 轴标签
-
-    return {
+    result = {
         "code": 0,
         "msg": "",
         "data": {
             "id": "80",
             "styleType": "0",
             "customOption": {},
-            "xAxis": [
-                {
-                    "type": "category",
-                    "name": "",
-                    "data": [period_label],
-                }
-            ],
-            "yAxis": [
-                {
-                    "name": "kgCO₂e",
-                    "type": "value",
-                }
-            ],
+            "xAxis": [{
+                "type": "category",
+                "name": "",
+                "data": x_data,
+            }],
+            "yAxis": [{
+                "name": CARBON_UNIT,
+                "type": "value",
+            }],
             "series": [
                 {
                     "name": "总碳排",
                     "type": "line",
-                    "data": [total_val],
+                    "data": total_data,
                 },
                 {
-                    "name": "电耗碳排",
+                    "name": f"{DISPLAY_UNIT_MAP.get(unit_name, unit_name)}电耗碳排",
                     "type": "line",
-                    "data": [elec_val],
+                    "data": electric_data,
                 },
                 {
-                    "name": "药耗碳排",
+                    "name": f"{DISPLAY_UNIT_MAP.get(unit_name, unit_name)}药耗碳排",
                     "type": "line",
-                    "data": [chem_val],
+                    "data": chemical_data,
                 },
             ],
             "colors": [
@@ -290,60 +280,49 @@ def pretreat_trend(body: TrendBody) -> Dict[str, Any]:
             ],
         },
     }
+    return _round_obj(result)
 
 
-# ========= 3) 厂内-预处理段-碳排占比 =========
+def _pretreat_share_payload(timeType: int) -> Dict[str, Any]:
+    config = _time_config(timeType)
+    details = _summary_detail_rows(timeType)
 
-@router.get("/api/process/inner/预处理/share")
-def pretreat_share(timeType: int = 4) -> Dict[str, Any]:
-    """
-    预处理段内部构成占比（使用《水厂内_分单元》中“段内占比_日/周/月/年”列）
-
-    timeType:
-      1 = 日 -> 段内占比_日
-      2 = 周 -> 段内占比_周
-      3 = 月 -> 段内占比_月
-      4 = 年 -> 段内占比_年（默认）
-    """
-    suffix = _period_suffix(timeType)          # 日 / 周 / 月 / 年
-    col_ratio = f"段内占比_{suffix}"
-
-    df = load_unit_table()
-
-    # 只看预处理段
-    pretreat = df[df["工艺段"] == "预处理段"].copy()
-    if pretreat.empty:
-        raise HTTPException(status_code=500, detail="未在水厂内_分单元中找到“预处理段”记录")
-
-    if col_ratio not in pretreat.columns:
-        raise HTTPException(status_code=500, detail=f"水厂内_分单元 缺少字段：{col_ratio}")
-
-    well_ozone = pretreat[
-        pretreat["工艺单元"].astype(str).str.contains("配水井和预臭氧接触池")
-    ]
-    hypo = pretreat[
-        pretreat["工艺单元"].astype(str).str.contains("加药间")
-    ]
-
-    def _sum_ratio(d: pd.DataFrame) -> float:
-        if d.empty:
+    def share_for(unit_name: str) -> float:
+        row = details[details["process_unit"] == unit_name]
+        if row.empty:
             return 0.0
-        return float(pd.to_numeric(d[col_ratio], errors="coerce").fillna(0.0).sum())
+        return float(row.iloc[0]["unit_share_within_stage_avg"]) * 100.0
 
-    well_ozone_ratio = _sum_ratio(well_ozone)
-    hypo_ratio = _sum_ratio(hypo)
+    well_share = share_for("预处理_配水井和预臭氧接触池")
+    dosing_share = share_for("预处理_加药间")
 
-    source = [
-        {"碳排结构": "配水井和预臭氧接触池", "数据值": well_ozone_ratio},
-        {"碳排结构": "加药间", "数据值": hypo_ratio},
-    ]
-
-    return {
+    result = {
         "code": 0,
         "msg": "",
         "data": {
+            "unit": SHARE_UNIT,
             "dimensions": ["碳排结构", "数据值"],
-            "source": source,
+            "source": [
+                {
+                    "碳排结构": "配水井和预臭氧接触池",
+                    "数据值": well_share,
+                },
+                {
+                    "碳排结构": "加药间",
+                    "数据值": dosing_share,
+                },
+            ],
             "dimensionsMapping": ["碳排结构", "数据值"],
         },
     }
+    return _round_obj(result)
+
+
+@router.get("/api/process/inner/预处理/share")
+def pretreat_share(timeType: int = Query(4)) -> Dict[str, Any]:
+    return _pretreat_share_payload(timeType)
+
+
+@router.post("/api/process/inner/预处理/share")
+def pretreat_share_post(body: TimeBody = TimeBody()) -> Dict[str, Any]:
+    return _pretreat_share_payload(int(body.timeType))

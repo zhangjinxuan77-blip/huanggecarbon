@@ -1,0 +1,5 @@
+﻿summary_period,source_file,summary_level,row_count,start_time,end_time,ADJP11_runtime_h_sum,ADJP11_power_kW_sum,ADJP11_energy_kWh_sum,ADJP11_carbon_kg_sum,ADJP21_runtime_h_sum,ADJP21_power_kW_sum,ADJP21_energy_kWh_sum,ADJP21_carbon_kg_sum,ADJP22_runtime_h_sum,ADJP22_power_kW_sum,ADJP22_energy_kWh_sum,ADJP22_carbon_kg_sum,unit_total_energy_kWh_sum,unit_total_carbon_kg_sum
+latest_24h_hourly,hourly.csv,total,24,2025-10-21 04:00:00+00:00,2025-10-22 03:00:00+00:00,0.0,276.9230769230769,0.0,0.0,0.0,276.9230769230769,0.0,0.0,0.0,276.9230769230769,0.0,0.0,0.0,0.0
+latest_7d_daily,daily.csv,total,7,2025-10-16 00:00:00+00:00,2025-10-22 00:00:00+00:00,0.0,1707.6923076923076,0.0,0.0,0.0,1707.6923076923076,0.0,0.0,0.0,1707.6923076923076,0.0,0.0,0.0,0.0
+latest_5w_weekly,weekly.csv,total,5,2025-09-28 00:00:00+00:00,2025-10-26 00:00:00+00:00,0.0,8353.846153846152,0.0,0.0,0.0,8353.846153846152,0.0,0.0,0.0,8353.846153846152,0.0,0.0,0.0,0.0
+latest_12m_monthly,monthly.csv,total,6,2025-05-31 00:00:00+00:00,2025-10-31 00:00:00+00:00,0.0,43453.84615384615,0.0,0.0,0.0,43453.84615384615,0.0,0.0,0.0,43453.84615384615,0.0,0.0,0.0,0.0

@@ -1,83 +1,83 @@
 # -*- coding: utf-8 -*-
+import os
+from functools import lru_cache
+
+import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-import pandas as pd
-from typing import Optional
+
+from modules.common import format_float_2d
+
 
 router = APIRouter()
 
-# ====== 入参 ======
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data", "real-time output", "单位水处理强度和减排量")
+
+TREND_FILE_MAP = {
+    1: "单位水处理强度_日趋势.csv",
+    2: "单位水处理强度_周趋势.csv",
+    3: "单位水处理强度_月趋势.csv",
+    4: "单位水处理强度_月趋势.csv",
+}
+
+TIME_COLUMN_MAP = {
+    1: "scope日期",
+    2: "scope周日期",
+    3: "scope月份",
+    4: "scope月份",
+}
+
+
 class TimeBody(BaseModel):
-    timeType: int  # 1=日、2=周、3=月、4=年
+    timeType: int  # 1=日, 2=周, 3=月, 4=年
 
 
-# ====== 缓存（避免重复读 Excel） ======
-_TABLE: Optional[pd.DataFrame] = None
-
-
-# ====== 表加载函数 ======
-def load_table() -> pd.DataFrame:
-    """
-    读取《碳排_总汇总_含强度与减排.xlsx》
-    需要其中的 sheet：'总汇总_含强度'
-    """
-    global _TABLE
-    if _TABLE is not None:
-        return _TABLE
-
+@lru_cache(maxsize=4)
+def load_trend(filename: str) -> pd.DataFrame:
+    path = os.path.join(DATA_DIR, filename)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=500, detail=f"趋势文件不存在: {path}")
     try:
-        df = pd.read_excel("data/碳排_总汇总_含强度与减排.xlsx",
-                           sheet_name="总汇总_含强度")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Excel 加载失败: {e}")
-
-    # 要求 DF 至少包含如下列：
-    required_cols = ["周期", "水处理量_m3", "单位水处理强度_kgCO2e_per_m3"]
-    for c in required_cols:
-        if c not in df.columns:
-            raise HTTPException(status_code=500, detail=f"Excel 缺少字段：{c}")
-
-    _TABLE = df
-    return df
+        return pd.read_csv(path, encoding="utf-8-sig")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"趋势文件加载失败: {exc}")
 
 
-# ====== 主接口 ======
+def _format_time(value) -> str:
+    ts = pd.to_datetime(value, errors="coerce")
+    if pd.isna(ts):
+        return str(value)
+    return ts.strftime("%Y-%m-%d")
+
+
 @router.post("/api/dashboard/unit_intensity")
 def unit_intensity(body: TimeBody):
-    """
-    入参：
-        {"timeType": 1}  # 1=日, 2=周, 3=月, 4=年（目前只是占位，不区分）
-    出参：
-        {
-          "code": 0,
-          "msg": "",
-          "data": {
-            "dimensions": ["总处理水量", "单位处理强度"],
-            "source": [...],
-            "dimensionsMapping": ["总处理水量", "单位处理强度"]
-          }
-        }
-    """
-    if body.timeType not in (1, 2, 3, 4):
-        raise HTTPException(status_code=400,
-                            detail="timeType 必须是 1(日)/2(周)/3(月)/4(年)")
+    filename = TREND_FILE_MAP.get(int(body.timeType))
+    time_col = TIME_COLUMN_MAP.get(int(body.timeType))
+    if not filename or not time_col:
+        raise HTTPException(status_code=400, detail="timeType 只能是 1(日)/2(周)/3(月)/4(年)")
 
-    df = load_table()
+    df = load_trend(filename)
+    required_cols = [time_col, "水处理量_m3", "单位水处理碳排强度_kgCO2e_per_m3"]
+    for col in required_cols:
+        if col not in df.columns:
+            raise HTTPException(status_code=500, detail=f"趋势文件缺少字段: {col}")
 
-    # 每行输出一组数据（不再包含“时间”）
     source = []
     for _, row in df.iterrows():
         source.append({
+            "时间": _format_time(row[time_col]),
             "总处理水量": float(row["水处理量_m3"]),
-            "单位处理强度": float(row["单位水处理强度_kgCO2e_per_m3"]),
+            "单位处理强度": float(row["单位水处理碳排强度_kgCO2e_per_m3"]),
         })
 
-    return {
+    return format_float_2d({
         "code": 0,
         "msg": "",
         "data": {
-            "dimensions": ["总处理水量", "单位处理强度"],
+            "dimensions": ["时间", "总处理水量", "单位处理强度"],
             "source": source,
-            "dimensionsMapping": ["总处理水量", "单位处理强度"],
-        }
-    }
+            "dimensionsMapping": ["时间", "总处理水量", "单位处理强度"],
+        },
+    })
