@@ -26,7 +26,6 @@ class TimeBody(BaseModel):
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 TREND_DIR = os.path.join(BASE_DIR, "data", "real-time output", "scope123_总汇总")
-UNIT = "kgCO2e"
 
 TIME_CONFIG = {
     1: {"period": "日", "file": "latest_24h_hourly.csv"},
@@ -88,22 +87,12 @@ def build_payload(time_type: int) -> dict:
 
     df = _read_trend_file(config["file"])
     source = []
-    x_axis = []
-    total_data = []
-    scope1_data = []
-    scope2_data = []
-    scope3_data = []
     for _, row in df.iterrows():
         time_label = _format_time(row["period_start"], config["period"])
         total_value = float(row["total_carbon_kg"])
         scope1_value = float(row["scope1_carbon_kg"])
         scope2_value = float(row["scope2_carbon_kg"])
         scope3_value = float(row["scope3_carbon_kg"])
-        x_axis.append(time_label)
-        total_data.append(total_value)
-        scope1_data.append(scope1_value)
-        scope2_data.append(scope2_value)
-        scope3_data.append(scope3_value)
         source.append({
             "时间": time_label,
             "总碳排放量": total_value,
@@ -117,36 +106,6 @@ def build_payload(time_type: int) -> dict:
         "code": 0,
         "msg": "",
         "data": {
-            "unit": UNIT,
-            "period": config["period"],
-            "xAxis": x_axis,
-            "data": total_data,
-            "series": [
-                {
-                    "name": "总碳排放量",
-                    "type": "line",
-                    "unit": UNIT,
-                    "data": total_data,
-                },
-                {
-                    "name": "范围1",
-                    "type": "line",
-                    "unit": UNIT,
-                    "data": scope1_data,
-                },
-                {
-                    "name": "范围2",
-                    "type": "line",
-                    "unit": UNIT,
-                    "data": scope2_data,
-                },
-                {
-                    "name": "范围3",
-                    "type": "line",
-                    "unit": UNIT,
-                    "data": scope3_data,
-                },
-            ],
             "dimensions": dimensions,
             "source": source,
             "dimensionsMapping": dimensions,
