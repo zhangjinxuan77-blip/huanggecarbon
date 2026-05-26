@@ -27,6 +27,7 @@ TIME_CONFIG = {
     3: {"label": "月", "summary_period": "latest_5w_weekly", "trend_file": "latest_5w_weekly.csv"},
     4: {"label": "年", "summary_period": "latest_12m_monthly", "trend_file": "latest_12m_monthly.csv"},
 }
+STATIC_INFO_TIME_TYPE = 1
 
 
 class TimeBody(BaseModel):
@@ -193,8 +194,8 @@ def make_stage_router(
     data_dir = os.path.join(base_dir, "data", "real-time output", "process_stage_outputs", data_dir_name)
 
     def build_info(time_type: int) -> Dict[str, Any]:
-        rows = detail_rows(data_dir, time_type)
-        total = float(total_row(data_dir, time_type)["unit_total_carbon_kg_sum"])
+        rows = detail_rows(data_dir, STATIC_INFO_TIME_TYPE)
+        total = float(total_row(data_dir, STATIC_INFO_TIME_TYPE)["unit_total_carbon_kg_sum"])
         data = {
             "unit": CARBON_UNIT,
             "totalCarbonEmissions": total,

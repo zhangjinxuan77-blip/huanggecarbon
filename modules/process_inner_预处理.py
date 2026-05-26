@@ -38,6 +38,7 @@ TIME_CONFIG = {
     3: {"label": "月", "summary_period": "latest_5w_weekly", "trend_file": "latest_5w_weekly.csv"},
     4: {"label": "年", "summary_period": "latest_12m_monthly", "trend_file": "latest_12m_monthly.csv"},
 }
+STATIC_INFO_TIME_TYPE = 1
 
 UNIT_MAP = {
     1: "预处理_配水井和预臭氧接触池",
@@ -176,9 +177,9 @@ def _format_time(value: Any, time_type: int) -> str:
 
 
 def _pretreat_info_payload(timeType: int) -> Dict[str, Any]:
-    config = _time_config(timeType)
-    total = _summary_total_row(timeType)
-    details = _summary_detail_rows(timeType)
+    _time_config(timeType)
+    total = _summary_total_row(STATIC_INFO_TIME_TYPE)
+    details = _summary_detail_rows(STATIC_INFO_TIME_TYPE)
 
     def value_for(unit_name: str) -> float:
         row = details[details["process_unit"] == unit_name]
