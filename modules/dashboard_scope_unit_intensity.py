@@ -6,8 +6,6 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from modules.common import format_float_2d
-
 
 router = APIRouter()
 
@@ -53,6 +51,17 @@ def _format_time(value, time_type: int) -> str:
     return ts.strftime("%m-%d")
 
 
+def _round_2d(value) -> float:
+    return round(float(value), 2)
+
+
+def _round_2sig(value) -> float:
+    value = float(value)
+    if value == 0:
+        return 0.0
+    return float(f"{value:.2g}")
+
+
 @router.post("/api/dashboard/unit_intensity")
 def unit_intensity(body: TimeBody):
     time_type = int(body.timeType)
@@ -68,19 +77,45 @@ def unit_intensity(body: TimeBody):
             raise HTTPException(status_code=500, detail=f"趋势文件缺少字段: {col}")
 
     source = []
+    x_axis = []
+    water_data = []
+    intensity_data = []
     for _, row in df.iterrows():
+        time_label = _format_time(row[time_col], time_type)
+        water_value = _round_2d(row["水处理量_m3"])
+        intensity_value = _round_2sig(row["单位水处理碳排强度_kgCO2e_per_m3"])
+        x_axis.append(time_label)
+        water_data.append(water_value)
+        intensity_data.append(intensity_value)
         source.append({
-            "时间": _format_time(row[time_col], time_type),
-            "总处理水量": float(row["水处理量_m3"]),
-            "单位处理强度": float(row["单位水处理碳排强度_kgCO2e_per_m3"]),
+            "时间": time_label,
+            "单位处理强度": intensity_value,
+            "单位处理强度单位": "kgCO2e/m3",
+            "单位处理强度展示值": f"{intensity_value:g} kgCO2e/m3",
+            "总处理水量": water_value,
+            "总处理水量单位": "m3",
+            "总处理水量展示值": f"{water_value:.2f} m3",
         })
 
-    return format_float_2d({
+    return {
         "code": 0,
         "msg": "",
         "data": {
-            "dimensions": ["时间", "总处理水量", "单位处理强度"],
+            "unit": "kgCO2e/m3",
+            "waterUnit": "m3",
+            "xAxis": x_axis,
+            "data": intensity_data,
+            "waterData": water_data,
+            "series": [
+                {
+                    "name": "单位处理强度",
+                    "type": "bar",
+                    "unit": "kgCO2e/m3",
+                    "data": intensity_data,
+                }
+            ],
+            "dimensions": ["时间", "单位处理强度", "总处理水量"],
             "source": source,
-            "dimensionsMapping": ["时间", "总处理水量", "单位处理强度"],
+            "dimensionsMapping": ["时间", "单位处理强度", "总处理水量"],
         },
-    })
+    }
