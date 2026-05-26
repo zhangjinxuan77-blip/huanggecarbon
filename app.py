@@ -31,6 +31,8 @@ from modules.process_inner_清水处理段 import router as process_inner_清水
 
 # ===== Outer processes =====
 from modules.process_outer_原水取水段 import router as process_outer_原水取水段_router
+from modules.process_outer_供水段 import router as process_outer_供水段_router
+from modules.process_outer_供水段 import router_compat as process_outer_供水_router
 
 # ===== Diagnosis =====
 from modules.diagnosis_page import router as diag_router
@@ -76,6 +78,8 @@ app.include_router(process_inner_污泥处理段_router)
 app.include_router(process_inner_清水处理段_router)
 
 app.include_router(process_outer_原水取水段_router)
+app.include_router(process_outer_供水段_router)
+app.include_router(process_outer_供水_router)
 
 app.include_router(diag_router)
 
