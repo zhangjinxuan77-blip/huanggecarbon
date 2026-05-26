@@ -4,7 +4,7 @@
 接口：POST /api/dashboard/carbon_trend
 兼容：POST /api/dashboard/trend
 入参：{"timeType":1}，1=日, 2=周, 3=月, 4=年
-出参：按腾讯文档格式返回趋势数组，单位 kgCO2e
+出参：按腾讯文档格式返回趋势数组，数值口径为范围占比百分比
 """
 
 import os
@@ -26,7 +26,7 @@ class TimeBody(BaseModel):
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 TREND_DIR = os.path.join(BASE_DIR, "data", "real-time output", "scope123_总汇总")
-UNIT = "kgCO2e"
+UNIT = "%"
 
 TIME_CONFIG = {
     1: {"period": "日", "file": "latest_24h_hourly.csv"},
@@ -37,10 +37,9 @@ TIME_CONFIG = {
 
 REQUIRED_COLUMNS = [
     "period_start",
-    "scope1_carbon_kg",
-    "scope2_carbon_kg",
-    "scope3_carbon_kg",
-    "total_carbon_kg",
+    "scope1_share",
+    "scope2_share",
+    "scope3_share",
 ]
 
 
@@ -91,10 +90,10 @@ def build_payload(time_type: int) -> dict:
     for _, row in df.iterrows():
         source.append({
             "时间": _format_time(row["period_start"], config["period"]),
-            "总碳排放量": float(row["total_carbon_kg"]),
-            "范围1": float(row["scope1_carbon_kg"]),
-            "范围2": float(row["scope2_carbon_kg"]),
-            "范围3": float(row["scope3_carbon_kg"]),
+            "总碳排放量": 100.0,
+            "范围1": float(row["scope1_share"]) * 100.0,
+            "范围2": float(row["scope2_share"]) * 100.0,
+            "范围3": float(row["scope3_share"]) * 100.0,
         })
 
     dimensions = ["时间", "总碳排放量", "范围1", "范围2", "范围3"]
