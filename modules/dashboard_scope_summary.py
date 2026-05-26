@@ -3,7 +3,7 @@
 碳排数据汇总接口
 接口：POST /api/dashboard/scope_summary
 入参：{"timeType":1}，1=日, 2=周, 3=月, 4=年
-出参：从 summary.csv 返回单组范围汇总数据，单位 kgCO2e
+出参：按腾讯文档格式返回 xAxis/yAxis/data1/data2/data3，单位 kgCO2e
 """
 
 import os
@@ -86,23 +86,17 @@ def build_payload(time_type: int) -> dict:
     scope1 = float(row["scope1_carbon_kg_sum"])
     scope2 = float(row["scope2_carbon_kg_sum"])
     scope3 = float(row["scope3_carbon_kg_sum"])
-    total = float(row["total_carbon_kg_sum"])
-
     return {
         "code": 0,
         "msg": "",
         "data": {
             "unit": UNIT,
             "period": period,
-            "dimensions": ["name", "data"],
-            "source": [
-                {"name": "范围1", "data": scope1, "dataWithUnit": f"{scope1:.2f} {UNIT}"},
-                {"name": "范围2", "data": scope2, "dataWithUnit": f"{scope2:.2f} {UNIT}"},
-                {"name": "范围3", "data": scope3, "dataWithUnit": f"{scope3:.2f} {UNIT}"},
-            ],
-            "totalCarbonEmission": total,
-            "totalCarbonEmissionWithUnit": f"{total:.2f} {UNIT}",
-            "dimensionsMapping": ["name", "data"],
+            "xAxis": ["范围1", "范围2", "范围3"],
+            "yAxis": ["直接排放", "间接排放"],
+            "data1": [scope1, 0.0],
+            "data2": [0.0, scope2],
+            "data3": [0.0, scope3],
         },
     }
 

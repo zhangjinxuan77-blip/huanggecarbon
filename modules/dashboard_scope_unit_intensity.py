@@ -44,17 +44,20 @@ def load_trend(filename: str) -> pd.DataFrame:
         raise HTTPException(status_code=500, detail=f"趋势文件加载失败: {exc}")
 
 
-def _format_time(value) -> str:
+def _format_time(value, time_type: int) -> str:
     ts = pd.to_datetime(value, errors="coerce")
     if pd.isna(ts):
         return str(value)
-    return ts.strftime("%Y-%m-%d")
+    if time_type in (3, 4):
+        return f"{ts.month}月"
+    return ts.strftime("%m-%d")
 
 
 @router.post("/api/dashboard/unit_intensity")
 def unit_intensity(body: TimeBody):
-    filename = TREND_FILE_MAP.get(int(body.timeType))
-    time_col = TIME_COLUMN_MAP.get(int(body.timeType))
+    time_type = int(body.timeType)
+    filename = TREND_FILE_MAP.get(time_type)
+    time_col = TIME_COLUMN_MAP.get(time_type)
     if not filename or not time_col:
         raise HTTPException(status_code=400, detail="timeType 只能是 1(日)/2(周)/3(月)/4(年)")
 
@@ -67,7 +70,7 @@ def unit_intensity(body: TimeBody):
     source = []
     for _, row in df.iterrows():
         source.append({
-            "时间": _format_time(row[time_col]),
+            "时间": _format_time(row[time_col], time_type),
             "总处理水量": float(row["水处理量_m3"]),
             "单位处理强度": float(row["单位水处理碳排强度_kgCO2e_per_m3"]),
         })
