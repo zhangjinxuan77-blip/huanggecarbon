@@ -285,8 +285,8 @@ def pretreat_trend(body: TrendBody) -> Dict[str, Any]:
 
 
 def _pretreat_share_payload(timeType: int) -> Dict[str, Any]:
-    config = _time_config(timeType)
-    details = _summary_detail_rows(timeType)
+    _time_config(timeType)
+    details = _summary_detail_rows(STATIC_INFO_TIME_TYPE)
 
     def share_for(unit_name: str) -> float:
         row = details[details["process_unit"] == unit_name]

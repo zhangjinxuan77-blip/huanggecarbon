@@ -232,7 +232,8 @@ def make_stage_router(
         })
 
     def build_share(time_type: int) -> Dict[str, Any]:
-        rows = detail_rows(data_dir, time_type)
+        time_config(time_type)
+        rows = detail_rows(data_dir, STATIC_INFO_TIME_TYPE)
         source = []
         for q in qtype_units.values():
             value = sum_for_aliases(rows, q["aliases"], "unit_share_within_stage_avg") * 100.0
