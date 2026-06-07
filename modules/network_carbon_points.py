@@ -41,6 +41,34 @@ def _load_yearly_sheet() -> pd.DataFrame:
     return df
 
 
+def _latest_yearly_rows() -> pd.DataFrame:
+    df = _load_yearly_sheet()
+    required = ["period", "CO2e_kg", "flow_m3_h", "kWh", "SE_kWh_m3"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise HTTPException(status_code=500, detail=f"数据缺少字段: {missing}")
+
+    df = df.copy()
+    df["period"] = pd.to_datetime(df["period"], errors="coerce")
+    df = df.dropna(subset=["period"])
+    if df.empty:
+        return df
+
+    latest_period = df["period"].max()
+    latest = df[df["period"] == latest_period].copy()
+    for col in ["CO2e_kg", "flow_m3_h", "kWh", "SE_kWh_m3"]:
+        latest[col] = pd.to_numeric(latest[col], errors="coerce").fillna(0.0)
+    return latest
+
+
+def _fmt_2d(value: float) -> str:
+    return f"{float(value):.2f}"
+
+
+def _fmt_6d(value: float) -> str:
+    return f"{float(value):.6f}"
+
+
 def _latest_per_point(df: pd.DataFrame) -> pd.DataFrame:
     """
     每个监测点取最新一条记录
@@ -104,3 +132,30 @@ def network_points_carbon() -> Dict[str, Any]:
         "count": len(items),
         "data": items
     })
+
+
+@router.post("/api/network/carbon_info")
+@router.post("/api/network/carbon-info")
+@router.post("/api/network/carbon/info")
+def network_carbon_info() -> Dict[str, Any]:
+    rows = _latest_yearly_rows()
+    if rows.empty:
+        total_ce = avg_ce = avg_wtf = unit_energy = 0.0
+    else:
+        total_ce = float(rows["CO2e_kg"].sum())
+        avg_ce = float(rows["CO2e_kg"].mean())
+        avg_wtf = float(rows["flow_m3_h"].mean())
+        total_flow = float(rows["flow_m3_h"].sum())
+        total_kwh = float(rows["kWh"].sum())
+        unit_energy = total_kwh / total_flow if total_flow else float(rows["SE_kWh_m3"].mean())
+
+    return {
+        "code": 0,
+        "msg": "",
+        "data": {
+            "totalCe": _fmt_2d(total_ce),
+            "avgCe": _fmt_2d(avg_ce),
+            "avgWtf": _fmt_2d(avg_wtf),
+            "unitECWaterTrans": _fmt_6d(unit_energy),
+        },
+    }
