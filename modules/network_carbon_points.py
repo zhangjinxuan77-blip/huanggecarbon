@@ -69,7 +69,7 @@ def _norm_point(value: Any) -> str:
     return text
 
 
-def _latest_positive_daily_rows() -> pd.DataFrame:
+def _latest_daily_rows() -> pd.DataFrame:
     df = _load_daily_sheet()
     required = ["period", "point", "pressure_m", "CO2e_kg", "flow_m3_h", "kWh", "SE_kWh_m3"]
     missing = [c for c in required if c not in df.columns]
@@ -80,14 +80,17 @@ def _latest_positive_daily_rows() -> pd.DataFrame:
     df["period"] = pd.to_datetime(df["period"], errors="coerce")
     for col in ["pressure_m", "CO2e_kg", "flow_m3_h", "kWh", "SE_kWh_m3"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
-    df = df.dropna(subset=["period", "point", "CO2e_kg"])
-    df = df[df["CO2e_kg"] > 0].copy()
+    df = df.dropna(subset=["period", "point"])
     if df.empty:
         return df
 
-    latest_period = df["period"].max()
+    positive_periods = df.loc[df["CO2e_kg"].fillna(0.0) > 0, "period"]
+    if positive_periods.empty:
+        return df.iloc[0:0].copy()
+
+    latest_period = positive_periods.max()
     latest = df[df["period"] == latest_period].copy()
-    for col in ["pressure_m", "flow_m3_h", "kWh", "SE_kWh_m3"]:
+    for col in ["pressure_m", "CO2e_kg", "flow_m3_h", "kWh", "SE_kWh_m3"]:
         latest[col] = latest[col].fillna(0.0)
     return latest
 
@@ -108,7 +111,7 @@ def _fmt_marker_num(value: Any, unit: str) -> str:
 
 @router.post("/api/network/carbon_info")
 def network_carbon_info() -> Dict[str, Any]:
-    rows = _latest_positive_daily_rows()
+    rows = _latest_daily_rows()
     if rows.empty:
         total_ce = avg_ce = avg_wtf = unit_energy = 0.0
     else:
@@ -133,7 +136,8 @@ def network_carbon_info() -> Dict[str, Any]:
 
 @router.post("/api/network/map")
 def network_carbon_map() -> Dict[str, Any]:
-    daily = _latest_positive_daily_rows()
+    daily = _latest_daily_rows()
+    daily = daily[daily["CO2e_kg"] > 0].copy()
     coords = _load_coord_sheet()
 
     coord_required = ["监测点名称", "经度", "纬度"]
