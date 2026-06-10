@@ -34,10 +34,6 @@ from modules.process_outer_原水取水段 import router as process_outer_原水
 from modules.process_outer_供水段 import router as process_outer_供水段_router
 from modules.process_outer_供水段 import router_compat as process_outer_供水_router
 
-# ===== HG 黄阁水厂 待对接接口 =====
-from modules.hg_diagnosis import router as hg_diagnosis_router
-from modules.hg_lowcarbon import router as hg_lowcarbon_router
-
 # ===== Diagnosis =====
 from modules.diagnosis_page import router as diag_router
 
@@ -84,10 +80,6 @@ app.include_router(process_inner_清水处理段_router)
 app.include_router(process_outer_原水取水段_router)
 app.include_router(process_outer_供水段_router)
 app.include_router(process_outer_供水_router)
-
-# HG 黄阁水厂路由优先注册，覆盖下方同路径的占位实现
-app.include_router(hg_diagnosis_router)
-app.include_router(hg_lowcarbon_router)
 
 app.include_router(diag_router)
 
