@@ -92,18 +92,18 @@ def _latest_positive_daily_rows() -> pd.DataFrame:
     return latest
 
 
-def _fmt_2d(value: float) -> str:
-    return f"{float(value):.2f}"
+def _fmt_2d(value: float, unit: str) -> str:
+    return f"{float(value):.2f} {unit}"
 
 
-def _fmt_6d(value: float) -> str:
-    return f"{float(value):.6f}"
+def _fmt_6d(value: float, unit: str) -> str:
+    return f"{float(value):.6f} {unit}"
 
 
-def _fmt_marker_num(value: Any) -> str:
+def _fmt_marker_num(value: Any, unit: str) -> str:
     if pd.isna(value):
-        return "0"
-    return f"{float(value):.2f}"
+        return f"0.00 {unit}"
+    return f"{float(value):.2f} {unit}"
 
 
 @router.post("/api/network/carbon_info")
@@ -123,10 +123,10 @@ def network_carbon_info() -> Dict[str, Any]:
         "code": 0,
         "msg": "",
         "data": {
-            "totalCe": _fmt_2d(total_ce),
-            "avgCe": _fmt_2d(avg_ce),
-            "avgWtf": _fmt_2d(avg_wtf),
-            "unitECWaterTrans": _fmt_6d(unit_energy),
+            "totalCe": _fmt_2d(total_ce, "kgCO2e"),
+            "avgCe": _fmt_2d(avg_ce, "kgCO2e"),
+            "avgWtf": _fmt_2d(avg_wtf, "m3/h"),
+            "unitECWaterTrans": _fmt_6d(unit_energy, "kWh/m3"),
         },
     }
 
@@ -161,9 +161,9 @@ def network_carbon_map() -> Dict[str, Any]:
         markers.append({
             "position": [float(row["经度"]), float(row["纬度"])],
             "title": str(row["监测点名称"]),
-            "pressure": _fmt_marker_num(row["pressure_m"]),
-            "flow": _fmt_marker_num(row["flow_m3_h"]),
-            "carbonEmission": _fmt_marker_num(row["CO2e_kg"]),
+            "pressure": _fmt_marker_num(row["pressure_m"], "m"),
+            "flow": _fmt_marker_num(row["flow_m3_h"], "m3/h"),
+            "carbonEmission": _fmt_marker_num(row["CO2e_kg"], "kgCO2e"),
             "uploadTime": row["period"].strftime("%Y-%m-%d %H:%M:%S"),
         })
 
