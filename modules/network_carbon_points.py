@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-管网碳排监测点接口（固定读取年数据）
-出参：监测点名称（前端为准）、碳排量、监测时间（最新一条）
+管网碳排接口：
+- POST /api/network/carbon_info
+- POST /api/network/map
 """
 
 import os
 import re
 import pandas as pd
-from typing import List, Dict, Any
+from typing import Dict, Any
 
 from fastapi import APIRouter, HTTPException
-from modules.common import format_float_2d
 
 router = APIRouter()
 
@@ -119,74 +119,7 @@ def _fmt_marker_num(value: Any) -> str:
     return f"{float(value):.2f}"
 
 
-def _latest_per_point(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    每个监测点取最新一条记录
-    必须包含列：
-    - point（监测点名称）
-    - CO2e_kg（碳排量）
-    - period 或 ts（时间列）
-    """
-    if "point" not in df.columns:
-        raise HTTPException(status_code=500, detail="数据缺少 point 列")
-    if "CO2e_kg" not in df.columns:
-        raise HTTPException(status_code=500, detail="数据缺少 CO2e_kg 列")
-
-    time_col = "period" if "period" in df.columns else ("ts" if "ts" in df.columns else None)
-    if time_col is None:
-        raise HTTPException(status_code=500, detail="数据缺少 period/ts 时间列")
-
-    df = df.copy()
-    df[time_col] = pd.to_datetime(df[time_col], errors="coerce")
-    df = df.dropna(subset=["point", time_col])
-
-    df = df.sort_values(["point", time_col])
-    latest = df.groupby("point", as_index=False).tail(1)
-    return latest[["point", time_col, "CO2e_kg"]]
-
-
-@router.post("/api/network/points-carbon")
-def network_points_carbon() -> Dict[str, Any]:
-    """
-    固定返回年数据，每个监测点最新一条
-    出参结构：
-    {
-      "timeType": "年",
-      "sheet": "Yearly_PressurePoint",
-      "count": N,
-      "data": [{name, carbonKg, monitorTime}]
-    }
-    """
-    df = _load_yearly_sheet()
-    latest = _latest_per_point(df)
-
-    items: List[Dict[str, Any]] = []
-    time_col = "period" if "period" in df.columns else "ts"
-
-    for _, r in latest.iterrows():
-        name = str(r["point"])
-        carbon = r["CO2e_kg"]
-        t = r[time_col]
-
-        items.append({
-            "name": name,
-            "carbonKg": 0.0 if pd.isna(carbon) else float(carbon),
-            "monitorTime": "" if pd.isna(t) else t.strftime("%Y-%m-%d %H:%M:%S"),
-        })
-
-    return format_float_2d({
-        "code": 0,
-        "msg": "",
-        "timeType": "年",
-        "sheet": "Yearly_PressurePoint",
-        "count": len(items),
-        "data": items
-    })
-
-
 @router.post("/api/network/carbon_info")
-@router.post("/api/network/carbon-info")
-@router.post("/api/network/carbon/info")
 def network_carbon_info() -> Dict[str, Any]:
     rows = _latest_yearly_rows()
     if rows.empty:
@@ -212,9 +145,6 @@ def network_carbon_info() -> Dict[str, Any]:
 
 
 @router.post("/api/network/map")
-@router.post("/api/network/network_map")
-@router.post("/api/network/carbon_map")
-@router.post("/api/network/carbon-map")
 def network_carbon_map() -> Dict[str, Any]:
     hourly = _load_hourly_sheet()
     coords = _load_coord_sheet()
@@ -230,10 +160,12 @@ def network_carbon_map() -> Dict[str, Any]:
 
     hourly = hourly.copy()
     hourly["ts"] = pd.to_datetime(hourly["ts"], errors="coerce")
-    hourly = hourly.dropna(subset=["ts", "point"])
+    hourly["CO2e_kg"] = pd.to_numeric(hourly["CO2e_kg"], errors="coerce")
+    hourly = hourly.dropna(subset=["ts", "point", "CO2e_kg"])
+    hourly = hourly[hourly["CO2e_kg"] > 0].copy()
     hourly = hourly.sort_values(["point", "ts"]).groupby("point", as_index=False).tail(1)
     hourly["point_key"] = hourly["point"].map(_norm_point)
-    for col in ["pressure_m", "flow_m3_h", "CO2e_kg"]:
+    for col in ["pressure_m", "flow_m3_h"]:
         hourly[col] = pd.to_numeric(hourly[col], errors="coerce").fillna(0.0)
 
     coords = coords.copy()
