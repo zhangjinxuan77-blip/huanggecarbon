@@ -22,8 +22,8 @@ def _load() -> dict:
         return json.load(f)
 
 
-@router.get("/api/dashboard/lowcarbon/strategies")
-def lowcarbon_strategies():
+@router.get("/api/dashboard/lowcarbon/strategies", operation_id="hg_lowcarbon_strategies")
+def hg_lowcarbon_strategies():
     data = _load()
     key  = "/api/dashboard/lowcarbon/strategies"
     if key not in data:
@@ -31,8 +31,8 @@ def lowcarbon_strategies():
     return data[key]
 
 
-@router.get("/api/dashboard/lowcarbon/evaluation")
-def lowcarbon_evaluation():
+@router.get("/api/dashboard/lowcarbon/evaluation", operation_id="hg_lowcarbon_evaluation")
+def hg_lowcarbon_evaluation():
     data = _load()
     key  = "/api/dashboard/lowcarbon/evaluation"
     if key not in data:

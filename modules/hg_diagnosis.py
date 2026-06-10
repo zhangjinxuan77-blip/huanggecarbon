@@ -26,8 +26,8 @@ def _load() -> dict:
         return json.load(f)
 
 
-@router.get("/api/dashboard/diagnosis_page")
-def diagnosis_page(type: int = Query(..., ge=1, le=3)):
+@router.get("/api/dashboard/diagnosis_page", operation_id="hg_diagnosis_page")
+def hg_diagnosis_page(type: int = Query(..., ge=1, le=3)):
     data = _load()
     key  = FIXED_KEY[type]
     if key not in data:
