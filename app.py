@@ -43,6 +43,9 @@ from modules.lowcarbon import router as lowcarbon_router
 # ===== network =====
 from modules.network_carbon_points import router as network_router
 
+# ===== Report export =====
+from modules.report_export import router as report_export_router
+
 app = FastAPI(title="Carbon API", version="1.0.0")
 
 # ===== CORS =====
@@ -86,6 +89,8 @@ app.include_router(diag_router)
 app.include_router(lowcarbon_router)
 
 app.include_router(network_router)
+
+app.include_router(report_export_router)
 
 @app.get("/api/_health")
 def health():
