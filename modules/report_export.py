@@ -20,9 +20,13 @@ router = APIRouter()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 REALTIME_DIR = BASE_DIR / "data" / "real-time output"
-SCOPE_DAILY_FILE = REALTIME_DIR / "scope123_总汇总" / "latest_7d_daily.csv"
+HISTORY_DIR = BASE_DIR / "data" / "history"
+HISTORY_SCOPE_FILE = HISTORY_DIR / "scope123_daily.csv"
+HISTORY_STAGE_FILE = HISTORY_DIR / "process_stage_daily.csv"
+HISTORY_UNIT_FILE = HISTORY_DIR / "process_unit_daily.csv"
+FALLBACK_SCOPE_FILE = REALTIME_DIR / "scope123_总汇总" / "latest_7d_daily.csv"
 STAGE_ROOT = REALTIME_DIR / "process_stage_outputs"
-STAGE_DAILY_FILE = STAGE_ROOT / "工艺段汇总" / "latest_7d_daily.csv"
+FALLBACK_STAGE_FILE = STAGE_ROOT / "工艺段汇总" / "latest_7d_daily.csv"
 
 BLUE = "123B75"
 CYAN = "1CA6E8"
@@ -60,6 +64,11 @@ def _read_csv(path: Path, required_columns: list[str]) -> pd.DataFrame:
     return df.dropna(subset=["period_start"])
 
 
+def _history_or_fallback(history_path: Path, fallback_path: Path) -> Path:
+    """历史文件存在时优先使用，否则保持原来的滚动数据行为。"""
+    return history_path if history_path.exists() else fallback_path
+
+
 def _filter_dates(df: pd.DataFrame, start_date: date, end_date: date) -> pd.DataFrame:
     dates = df["period_start"].dt.date
     return df[(dates >= start_date) & (dates <= end_date)].copy()
@@ -68,8 +77,9 @@ def _filter_dates(df: pd.DataFrame, start_date: date, end_date: date) -> pd.Data
 def _load_report_data(
     start_date: date, end_date: date
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    scope_path = _history_or_fallback(HISTORY_SCOPE_FILE, FALLBACK_SCOPE_FILE)
     scope = _read_csv(
-        SCOPE_DAILY_FILE,
+        scope_path,
         [
             "period_start",
             "scope1_carbon_kg",
@@ -91,7 +101,7 @@ def _load_report_data(
         )
 
     stage = _read_csv(
-        STAGE_DAILY_FILE,
+        _history_or_fallback(HISTORY_STAGE_FILE, FALLBACK_STAGE_FILE),
         [
             "period_start",
             "process_stage",
@@ -102,12 +112,9 @@ def _load_report_data(
     )
     stage_filtered = _filter_dates(stage, start_date, end_date)
 
-    detail_frames = []
-    for path in sorted(STAGE_ROOT.glob("*/latest_7d_daily.csv")):
-        if path.parent.name == "工艺段汇总":
-            continue
-        detail = _read_csv(
-            path,
+    if HISTORY_UNIT_FILE.exists():
+        details = _read_csv(
+            HISTORY_UNIT_FILE,
             [
                 "period_start",
                 "process_stage",
@@ -117,23 +124,40 @@ def _load_report_data(
                 "unit_total_carbon_kg",
             ],
         )
-        detail = _filter_dates(detail, start_date, end_date)
-        if not detail.empty:
-            detail_frames.append(detail)
-
-    if detail_frames:
-        details = pd.concat(detail_frames, ignore_index=True)
+        details = _filter_dates(details, start_date, end_date)
     else:
-        details = pd.DataFrame(
-            columns=[
-                "period_start",
-                "process_stage",
-                "process_unit",
-                "electric_carbon_kg",
-                "chemical_carbon_kg",
-                "unit_total_carbon_kg",
-            ]
-        )
+        detail_frames = []
+        for path in sorted(STAGE_ROOT.glob("*/latest_7d_daily.csv")):
+            if path.parent.name == "工艺段汇总":
+                continue
+            detail = _read_csv(
+                path,
+                [
+                    "period_start",
+                    "process_stage",
+                    "process_unit",
+                    "electric_carbon_kg",
+                    "chemical_carbon_kg",
+                    "unit_total_carbon_kg",
+                ],
+            )
+            detail = _filter_dates(detail, start_date, end_date)
+            if not detail.empty:
+                detail_frames.append(detail)
+
+        if detail_frames:
+            details = pd.concat(detail_frames, ignore_index=True)
+        else:
+            details = pd.DataFrame(
+                columns=[
+                    "period_start",
+                    "process_stage",
+                    "process_unit",
+                    "electric_carbon_kg",
+                    "chemical_carbon_kg",
+                    "unit_total_carbon_kg",
+                ]
+            )
 
     return (
         scope_filtered.sort_values("period_start"),
