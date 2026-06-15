@@ -7,13 +7,12 @@ from pathlib import Path
 from urllib.parse import quote
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Form, HTTPException
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, LineChart, Reference
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-from pydantic import BaseModel
 
 
 router = APIRouter()
@@ -34,11 +33,6 @@ LIGHT_BLUE = "DCEEFF"
 LIGHT_GRAY = "E9EEF5"
 WHITE = "FFFFFF"
 GRID = Side(style="thin", color="CCD6E3")
-
-
-class ReportBody(BaseModel):
-    startDate: date
-    endDate: date
 
 
 def _read_csv(path: Path, required_columns: list[str]) -> pd.DataFrame:
@@ -418,21 +412,31 @@ def _build_workbook(
 
 
 @router.post("/api/report/export", summary="导出碳排放报告")
-def export_report(body: ReportBody):
-    if body.endDate < body.startDate:
+def export_report(
+    startDate: date = Form(..., description="开始日期，格式：YYYY-MM-DD"),
+    endDate: date = Form(..., description="结束日期，格式：YYYY-MM-DD"),
+):
+    if endDate < startDate:
         raise HTTPException(status_code=400, detail="endDate 不能早于 startDate")
-    if (body.endDate - body.startDate).days > 366:
+    if (endDate - startDate).days > 366:
         raise HTTPException(status_code=400, detail="单次报告日期范围不能超过 366 天")
 
-    scope, stage, details = _load_report_data(body.startDate, body.endDate)
-    output = _build_workbook(body.startDate, body.endDate, scope, stage, details)
-    filename = f"黄阁水厂碳排放报告_{body.startDate}_{body.endDate}.xlsx"
-    disposition = f"attachment; filename*=UTF-8''{quote(filename)}"
+    scope, stage, details = _load_report_data(startDate, endDate)
+    output = _build_workbook(startDate, endDate, scope, stage, details)
+    filename = f"huangge_carbon_report_{startDate}_{endDate}.xlsx"
+    chinese_filename = f"黄阁水厂碳排放报告_{startDate}_{endDate}.xlsx"
+    disposition = (
+        f'attachment; filename="{filename}"; '
+        f"filename*=UTF-8''{quote(chinese_filename)}"
+    )
 
     return StreamingResponse(
         output,
-        media_type=(
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        ),
-        headers={"Content-Disposition": disposition},
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": disposition,
+            "Content-Type": (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
+        },
     )
