@@ -38,6 +38,9 @@ from modules.process_outer_supply_pump_info import router as process_outer_suppl
 # ===== Diagnosis =====
 from modules.diagnosis_page import router as diag_router
 
+# ===== Macro strategy =====
+from modules.macro_strategy import router as macro_strategy_router
+
 # ===== lowcarbon =====
 from modules.lowcarbon import router as lowcarbon_router
 
@@ -88,6 +91,8 @@ app.include_router(process_outer_供水_router)
 app.include_router(process_outer_supply_pump_info_router)
 
 app.include_router(diag_router)
+
+app.include_router(macro_strategy_router)
 
 app.include_router(lowcarbon_router)
 

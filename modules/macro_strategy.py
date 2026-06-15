@@ -1,22 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-优化策略诊断接口
-GET /api/dashboard/diagnosis_page?type=1|2|3
+宏观策略-厂网统筹接口
+GET /api/dashboard/macro_strategy
 数据源：data/南沙黄阁水厂_接口数据.json
 """
 
 import os, json
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 
 router = APIRouter()
 
 BASE_DIR  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_PATH = os.path.join(BASE_DIR, "data", "南沙黄阁水厂_接口数据.json")
-FIXED_KEY = {
-    1: "/api/dashboard/diagnosis_page?type=1",
-    2: "/api/dashboard/diagnosis_page?type=2",
-    3: "/api/dashboard/diagnosis_page?type=3",
-}
 
 
 def _load() -> dict:
@@ -26,10 +21,10 @@ def _load() -> dict:
         return json.load(f)
 
 
-@router.get("/api/dashboard/diagnosis_page", operation_id="hg_diagnosis_page")
-def hg_diagnosis_page(type: int = Query(..., ge=1, le=3)):
+@router.get("/api/dashboard/macro_strategy")
+def macro_strategy():
     data = _load()
-    key  = FIXED_KEY[type]
+    key  = "/api/dashboard/macro_strategy"
     if key not in data:
-        raise HTTPException(status_code=404, detail=f"数据中不含 {key}")
+        raise HTTPException(status_code=404, detail="数据中不含 macro_strategy")
     return data[key]
