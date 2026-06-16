@@ -179,24 +179,6 @@
       "optimizationStrategy": "建议检查混凝剂投加泵校准状态，复核混合搅拌器运行效率。结合原水浊度变化，优化PAC投加曲线"
     }
   },
-  "/api/dashboard/macro_strategy": {
-    "code": 0,
-    "msg": "",
-    "data": {
-      "carbonEmissionIntensity": "0.0849",
-      "totalCarbonEmissions": "29430.03",
-      "scope1Leakage": "0.032",
-      "scope2ElectricityConsumption": "13411",
-      "scope3Total": "16019",
-      "scope3ChemicalProduction": "10492",
-      "Scope3SludgeTransportation": "5527",
-      "electricityConsumption": "25444",
-      "chemicalAgent": "17859.9",
-      "sludgeTransportation": "1001.23",
-      "O3": "16.0",
-      "totalWaterSupply": "346536"
-    }
-  },
   "/api/dashboard/lowcarbon/realtime": {
     "code": 0,
     "msg": "",
