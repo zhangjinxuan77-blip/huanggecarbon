@@ -164,9 +164,9 @@
     "code": 0,
     "msg": "",
     "data": {
-      "energyConsumptionHotspots": "原水提升泵房、取水泵站",
-      "possibleCauses": "电耗碳排较月度历史均值偏高+407.3%，送水泵房数据未接入SCADA，实际能耗可能更高",
-      "optimizationStrategy": "建议结合能耗与药耗变化，优先排查送水泵房与臭氧系统运行效率"
+      "energyConsumptionHotspots": "无",
+      "possibleCauses": "电耗碳排正常，送水泵房数据未接入SCADA，实际能耗可能更高",
+      "optimizationStrategy": "建议持续监测分时电耗，优化高峰时段设备调度"
     }
   },
   "/api/dashboard/diagnosis_page?type=3": {
