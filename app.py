@@ -43,6 +43,7 @@ from modules.lowcarbon import router as lowcarbon_router
 
 # ===== network =====
 from modules.network_carbon_points import router as network_router
+from modules.network_strategy import router as network_strategy_router
 
 # ===== Report export =====
 from modules.report_export import router as report_export_router
@@ -92,6 +93,8 @@ app.include_router(diag_router)
 app.include_router(lowcarbon_router)
 
 app.include_router(network_router)
+
+app.include_router(network_strategy_router)
 
 app.include_router(report_export_router)
 
