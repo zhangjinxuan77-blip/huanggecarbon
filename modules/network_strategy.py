@@ -62,13 +62,15 @@ def _diagnose(act: pd.DataFrame) -> Tuple[List[str], str]:
     diag: List[str] = []
     mismatch = False
 
-    # 规则1：区域碳排强度离群
+    # 规则1：点名碳排强度最高的具体区域（始终给出区域名，避免"某区域"含糊）
     zi = act.groupby("zone")["I_kg_m3"].mean().sort_values(ascending=False)
-    if len(zi) >= 2 and zi.iloc[1] > 0:
-        dev = (zi.iloc[0] - zi.iloc[1]) / zi.iloc[1] * 100
-        diag.append(f"{_short(zi.index[0],4)}区域碳排强度偏高" if dev > 15 else "各区域碳排强度接近")
+    top_zone = _short(zi.index[0], 4)
+    if len(zi) >= 2 and zi.iloc[-1] > 0:
+        spread = (zi.iloc[0] - zi.iloc[-1]) / zi.iloc[-1] * 100  # 最高区 vs 最低区
+        diag.append(f"{top_zone}区域碳排强度最高+{spread:.0f}%" if spread >= 15
+                    else f"{top_zone}区域碳排强度最高")
     else:
-        diag.append("区域碳排强度正常")
+        diag.append(f"{top_zone}区域碳排强度最高")
 
     # 规则2：压力流量失配（高压分位 + 低流分位）
     a = act.copy()
