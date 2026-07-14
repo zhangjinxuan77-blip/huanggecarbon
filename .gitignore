@@ -16,3 +16,6 @@ __pycache__/
 
 # Local calculation backups
 data_backup/
+
+# Strategy engine generated reports
+scripts/strategy_engine/output/

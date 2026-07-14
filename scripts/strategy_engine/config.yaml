@@ -1,0 +1,99 @@
+emission_factors:
+  grid: 0.5271
+  pac: 0.537
+  pam: 3.25
+  sodium_hypochlorite: 0.64
+  ozone: 0.28
+  ozone_gwp: 0.04
+  sludge_transport: 0.12
+sludge_transport_distance_km: 115
+carbon_sink_monthly_baseline:
+- 1144
+- 1411
+- 1319
+- 1294
+- 1525
+- 1844
+- 2256
+- 1869
+- 2011
+- 2131
+- 1395
+- 1275
+thresholds:
+  carbon_structure_shift_pct: 0.05
+  carbon_intensity_delta_pct: 0.1
+  hourly_peak_threshold_pct: 0.2
+  pam_unit_high_pct: 0.15
+  dewatering_energy_high_pct: 0.15
+  backwash_frequency_max: null
+  ozone_leakage_max: 0.05
+  sludge_solid_content_min: 80
+reference_values:
+  pac_unit_consumption_3m_avg: null
+  pump_unit_energy_hist_avg: null
+  pump_unit_energy_hist_std: null
+  pam_unit_consumption_avg: null
+  dewatering_unit_energy_avg: null
+pac_unit_monthly_baseline:
+- 19.25
+- null
+- null
+- null
+- null
+- null
+- null
+- null
+- null
+- 19.25
+- null
+- null
+naclo_unit_monthly_baseline:
+- 26.36
+- null
+- null
+- null
+- null
+- null
+- null
+- null
+- null
+- 26.36
+- null
+- null
+l2_pac_deviation_pct: 0.2
+l3_naclo_deviation_pct: 0.2
+defaults:
+  total_water_volume_m3_per_day: 346536
+  ozone_consumption_kg_per_day: 16.0
+report:
+  default_period: 日报
+  language: zh
+# 电耗碳排月度基线(kgCO₂e)：取自仓库 history/scope123_daily.csv 的月度日均 scope2 碳排
+# 与现行电网因子 0.5271 同口径（history 亦按 0.5271 计）；修正原 build_baselines.py 稀疏SCADA导致的错误基线
+energy_carbon_monthly_baseline:
+- 14987.6
+- 10181.2
+- 17571.1
+- 15306.3
+- 10203.1
+- 10761.7
+- 12158.3
+- 13988.3
+- 13751.2
+- 11690.0
+- 12549.3
+- 16465.2
+energy_intensity_monthly_baseline:
+- 0.0076
+- 0.0029
+- 0.045
+- 0.0228
+- 0.0004
+- 0.0039
+- 0.0065
+- 0.0034
+- 0.0024
+- 0.0003
+- 0.0005
+- 0.0121
