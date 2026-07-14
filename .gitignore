@@ -13,3 +13,6 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# Local calculation backups
+data_backup/

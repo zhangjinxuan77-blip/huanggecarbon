@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import pandas as pd
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, LineChart, Reference
@@ -411,11 +411,7 @@ def _build_workbook(
     return output
 
 
-@router.post("/api/report/export", summary="导出碳排放报告")
-def export_report(
-    startDate: date = Form(..., description="开始日期，格式：YYYY-MM-DD"),
-    endDate: date = Form(..., description="结束日期，格式：YYYY-MM-DD"),
-):
+def _export_report_response(startDate: date, endDate: date) -> StreamingResponse:
     if endDate < startDate:
         raise HTTPException(status_code=400, detail="endDate 不能早于 startDate")
     if (endDate - startDate).days > 366:
@@ -440,3 +436,19 @@ def export_report(
             ),
         },
     )
+
+
+@router.post("/api/report/export", summary="导出碳排放报告（form）")
+def export_report(
+    startDate: date = Form(..., description="开始日期，格式：YYYY-MM-DD"),
+    endDate: date = Form(..., description="结束日期，格式：YYYY-MM-DD"),
+):
+    return _export_report_response(startDate, endDate)
+
+
+@router.get("/api/report/export", summary="导出碳排放报告（query）")
+def export_report_get(
+    startDate: date = Query(..., description="开始日期，格式：YYYY-MM-DD"),
+    endDate: date = Query(..., description="结束日期，格式：YYYY-MM-DD"),
+):
+    return _export_report_response(startDate, endDate)

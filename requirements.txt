@@ -4,3 +4,8 @@ pandas
 openpyxl
 numpy
 python-multipart
+pyarrow
+geopandas
+shapely
+pyproj
+xlrd
