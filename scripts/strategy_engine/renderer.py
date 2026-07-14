@@ -429,15 +429,22 @@ def _render_full_report(
     l3d = flags.get("layer3_details", {})
     if u1:
         pac_unit = u1["pac_unit_kg_per_kton"]
-        pac_ref = u1["pac_3m_avg"]
         coag_lines = [f"  {'PAC单耗':<14}{pac_unit:.3f} kg/千吨水"]
-        pac_high = (pac_ref is not None and pac_unit > pac_ref * 1.10)
         l2_detail = l3d.get("L2", {})
-        if not pac_high and isinstance(l2_detail, dict):
-            pac_high = l2_detail.get("triggered") and l2_detail.get("deviation_pct", 0) > 0
+        pac_comparable = (
+            isinstance(l2_detail, dict)
+            and l2_detail.get("deviation_pct") is not None
+        )
+        pac_high = (
+            pac_comparable
+            and bool(l2_detail.get("triggered"))
+            and l2_detail["deviation_pct"] > 0
+        )
         if pac_high:
             coag_lines.append(f"  {_warn('PAC单耗偏高')}")
             coag_lines.append("  → 建议检查混凝剂投加泵校准状态，复核混合搅拌器运行效率。结合原水浊度变化，优化PAC投加曲线。")
+        elif not pac_comparable:
+            coag_lines.append("  PAC历史基线无有效正值，暂不判断异常")
         else:
             coag_lines.append(f"  {_ok('混凝运行正常')}")
     else:
@@ -472,7 +479,9 @@ def _render_full_report(
                 naclo_status = _warn(f"NaClO单耗偏{'高' if dev>0 else '低'} {dev:+.1f}%")
             else:
                 naclo_status = _ok("NaClO单耗正常")
-            dis_lines.append(f"  {'NaClO单耗':<13}{naclo_unit_kton:.3f} kg/千吨水    {naclo_status}")
+        else:
+            naclo_status = "历史基线无有效正值，暂不判断异常"
+        dis_lines.append(f"  {'NaClO单耗':<13}{naclo_unit_kton:.3f} kg/千吨水    {naclo_status}")
 
     section_dis = "\n".join(dis_lines)
 

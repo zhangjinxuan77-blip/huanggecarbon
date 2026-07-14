@@ -1,67 +1,71 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
 from datetime import datetime
 
 
-class PlantData(BaseModel):
+class FiniteModel(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
+
+class PlantData(FiniteModel):
     plant_id: str
     timestamp: datetime
     period: str = "日报"
-    total_energy_consumption: float = Field(..., description="kWh")
-    carbon_emission_energy: float = Field(..., description="kgCO₂e 范围2电耗碳排")
-    carbon_emission_chemical: float = Field(..., description="kgCO₂e 范围3药耗碳排")
+    total_energy_consumption: float = Field(..., ge=0, description="kWh")
+    carbon_emission_energy: float = Field(..., ge=0, description="kgCO₂e 范围2电耗碳排")
+    carbon_emission_chemical: float = Field(..., ge=0, description="kgCO₂e 范围3药耗碳排")
     carbon_emission_o3_leakage: Optional[float] = Field(
-        None, description="kgCO₂e 范围1 O3泄漏碳排；None时由引擎从DisinfectionData字段计算"
+        None, ge=0, description="kgCO₂e 范围1 O3泄漏碳排；None时由引擎从DisinfectionData字段计算"
     )
     carbon_emission_sludge_transport: Optional[float] = Field(
-        None, description="kgCO₂e 污泥运输碳排；用于跨周期总碳排和结构同口径比较"
+        None, ge=0, description="kgCO₂e 污泥运输碳排；用于跨周期总碳排和结构同口径比较"
     )
     water_volume_m3: Optional[float] = Field(
-        None, description="m³/day 日供水量 HGS_CQCLSN_TJB10_In_water_flow 积分；None时用config缺省值"
+        None, ge=0, description="m³/day 日供水量 HGS_CQCLSN_TJB10_In_water_flow 积分；None时用config缺省值"
     )
 
 
-class CoagulationData(BaseModel):
-    pac_consumption_kg: Optional[float] = Field(None, description="kg/day PAC实际用量 TJL_PAC")
-    pam_consumption_kg: Optional[float] = Field(None, description="kg/day PAM实际用量 TJL_PAM")
+class CoagulationData(FiniteModel):
+    pac_consumption_kg: Optional[float] = Field(None, ge=0, description="kg/day PAC实际用量 TJL_PAC")
+    pam_consumption_kg: Optional[float] = Field(None, ge=0, description="kg/day PAM实际用量 TJL_PAM")
 
 
-class FiltrationData(BaseModel):
+class FiltrationData(FiniteModel):
     pass  # 反冲洗泵运行状态待接入SCADA，无水质/水量测量字段
 
 
-class DisinfectionData(BaseModel):
+class DisinfectionData(FiniteModel):
     sodium_hypochlorite_consumption_kg: Optional[float] = Field(
-        None, description="kg/day 次氯酸钠 TJL_NaClO"
+        None, ge=0, description="kg/day 次氯酸钠 TJL_NaClO"
     )
     ozone_consumption_kg: Optional[float] = Field(
-        None, description="kg/day O3实际产量 SCL_O3，字段HGS_CY_OZONE_ACTUAL_In_value"
+        None, ge=0, description="kg/day O3实际产量 SCL_O3，字段HGS_CY_OZONE_ACTUAL_In_value"
     )
     ozone_leakage_rate: Optional[float] = Field(
-        None, description="O3泄漏率 XLL_O3 0–1，字段HGS_2_CYXT_AI9等"
+        None, ge=0, le=1, description="O3泄漏率 XLL_O3 0–1，字段HGS_2_CYXT_AI9等"
     )
 
 
-class PumpStationData(BaseModel):
+class PumpStationData(FiniteModel):
     station_id: str
-    energy_consumption: float = Field(..., description="kWh，字段如HGS_SSBF_P1_In_activeEnergy")
+    energy_consumption: float = Field(..., ge=0, description="kWh，字段如HGS_SSBF_P1_In_activeEnergy")
 
 
-class PipelineSegmentData(BaseModel):
+class PipelineSegmentData(FiniteModel):
     segment_id: str
     pressure_drop: float = Field(..., description="MPa")
     flow_rate: float = Field(..., description="m³/h")
-    energy_consumption: float = Field(..., description="kWh")
+    energy_consumption: float = Field(..., ge=0, description="kWh")
 
 
-class SludgeDewatering(BaseModel):
-    pam_consumption_kg: Optional[float] = Field(None, description="kg/day 脱水PAM实际用量")
-    sludge_weight_tons: Optional[float] = Field(None, description="吨/day 污泥量 WNL_M")
-    sludge_solid_rate: Optional[float] = Field(None, description="含固率 0–1 WNHGL_S")
-    sludge_transport_km: Optional[float] = Field(None, description="km 运输距离 YSJL_D")
+class SludgeDewatering(FiniteModel):
+    pam_consumption_kg: Optional[float] = Field(None, ge=0, description="kg/day 脱水PAM实际用量")
+    sludge_weight_tons: Optional[float] = Field(None, ge=0, description="吨/day 污泥量 WNL_M")
+    sludge_solid_rate: Optional[float] = Field(None, ge=0, le=1, description="含固率 0–1 WNHGL_S")
+    sludge_transport_km: Optional[float] = Field(None, ge=0, description="km 运输距离 YSJL_D")
 
 
-class ProcessUnits(BaseModel):
+class ProcessUnits(FiniteModel):
     coagulation_sedimentation: CoagulationData
     filtration: FiltrationData
     disinfection: DisinfectionData
@@ -70,7 +74,7 @@ class ProcessUnits(BaseModel):
     sludge_dewatering: Optional[SludgeDewatering] = None
 
 
-class ReportRequest(BaseModel):
+class ReportRequest(FiniteModel):
     plant: PlantData
     units: ProcessUnits
     previous_plant: Optional[PlantData] = Field(

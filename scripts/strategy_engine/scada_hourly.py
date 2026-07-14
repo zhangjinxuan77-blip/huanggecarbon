@@ -52,9 +52,18 @@ def _analyze_generated_hourly(
         frame["period_start"], errors="coerce", format="ISO8601", utc=True
     )
     frame["_carbon"] = pd.to_numeric(frame[carbon_column], errors="coerce")
-    frame = frame.dropna(subset=["_time_utc", "_carbon"]).sort_values("_time_utc").tail(24)
+    frame = (
+        frame.dropna(subset=["_time_utc", "_carbon"])
+        .drop_duplicates(subset=["_time_utc"], keep="last")
+        .sort_values("_time_utc")
+        .tail(24)
+    )
     if frame.empty:
         return {"available": False, "reason": "公共小时结果中没有有效数据"}
+    if len(frame) != 24 or not frame["_time_utc"].diff().dropna().eq(
+        pd.Timedelta(hours=1)
+    ).all():
+        return {"available": False, "reason": "公共滚动小时结果不足24条或时间不连续"}
 
     frame["_time_local"] = frame["_time_utc"].dt.tz_convert("Asia/Shanghai")
     frame["hour"] = frame["_time_local"].dt.hour

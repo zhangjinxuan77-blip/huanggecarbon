@@ -481,6 +481,8 @@ s2_lines = ["范围2  间接排放（电力）", ""]
 if raw.get("energy_baseline_triggered"):
     s2_lines.append("  ⚠ 电耗碳排超出月度基准，建议：")
     s2_lines.append(f"  → {e2_strategy}。")
+elif raw.get("energy_vs_baseline_pct") is None:
+    s2_lines.append("  电耗月度基线无有效正值，暂不判断异常。")
 else:
     s2_lines.append("  ✓ 电耗碳排处于正常范围。")
 l1_hourly = l3d.get("L1", {})
@@ -496,6 +498,9 @@ if "L2" in l3t and isinstance(l2_pac, dict) and l2_pac.get("deviation_pct", 0) >
     s3_lines.append("  ⚠ PAC单耗偏高，建议：")
     s3_lines.append("  → 建议检查混凝剂投加泵校准状态，复核混合搅拌器运行效率。")
     s3_lines.append("  → 结合原水浊度变化，优化PAC投加曲线。")
+elif not isinstance(l2_pac, dict) or l2_pac.get("deviation_pct") is None:
+    s3_lines.append("  PAC历史基线无有效正值，暂不判断异常。")
+    s3_lines.append("  → 建议持续跟踪原水浊度与PAC投加量，待形成有效基线后再比较。")
 else:
     s3_lines.append("  ✓ PAC投加量正常。")
     s3_lines.append("  → 建议持续跟踪原水浊度，动态调整投加策略。")
@@ -503,6 +508,9 @@ l3_naclo = l3d.get("L3", {})
 if "L3" in l3t:
     s3_lines.append("  ⚠ NaClO单耗偏差较大，建议：")
     s3_lines.append("  → 建议根据水温季节变化动态调整工艺参数预设值。")
+elif not isinstance(l3_naclo, dict) or l3_naclo.get("deviation_pct") is None:
+    s3_lines.append("  NaClO历史基线无有效正值，暂不判断异常。")
+    s3_lines.append("  → 建议持续跟踪投加量，待形成有效基线后再比较。")
 else:
     s3_lines.append("  ✓ NaClO投加量正常。")
     s3_lines.append("  → NaClO单耗未触发异常，建议维持当前参数并持续监测。")
@@ -541,19 +549,36 @@ else:
 
 # 范围2：能耗热点
 e_vs_base      = raw.get("energy_vs_baseline_pct")
-e_base_str     = f"电耗碳排较月度历史均值偏高 +{e_vs_base:.1f}%" if e_vs_base and e_vs_base > 0 \
-                 else "电耗碳排处于正常范围"
+if e_vs_base is None:
+    e_base_str = "电耗月度基线无有效正值，暂不判断异常"
+elif raw.get("energy_baseline_triggered"):
+    e_base_str = f"电耗碳排较月度历史均值偏高 +{e_vs_base:.1f}%"
+else:
+    e_base_str = "电耗碳排处于正常范围"
 
 # 范围3：PAC
 l2_pac         = l3d.get("L2", {})
 pac_today      = l2_pac.get("pac_unit_today", PAC_KG / (water_volume_m3 / 1000) if water_volume_m3 else 0)
 pac_base       = l2_pac.get("pac_baseline_monthly")
 pac_dev        = l2_pac.get("deviation_pct")
+pac_threshold  = float(l2_pac.get("threshold_pct", 20.0))
 pac_comparable = pac_base is not None and pac_dev is not None
-if "L2" in l3t:
+pac_triggered  = "L2" in l3t and pac_comparable and pac_dev > 0
+pac_base_text  = f"{pac_base:.3f} kg/千吨水" if pac_base is not None else "N/A"
+if pac_dev is None:
+    pac_deviation_text = "N/A"
+elif abs(pac_dev) > pac_threshold:
+    pac_deviation_text = f"{pac_dev:+.1f}%（超出阈值±{pac_threshold:.0f}%）"
+else:
+    pac_deviation_text = f"{pac_dev:+.1f}%（阈值±{pac_threshold:.0f}%以内）"
+if pac_triggered:
     pac_heat = "PAC投加"
     pac_cause = "PAC单耗偏高，可能与水质或投加设备效率有关"
     pac_strategy = "建议检查混凝剂投加泵校准状态，复核混合搅拌器运行效率。结合原水浊度变化，优化PAC投加曲线"
+elif not pac_comparable:
+    pac_heat = "PAC投加"
+    pac_cause = "PAC历史基线无有效正值，暂不判断异常"
+    pac_strategy = "建议持续跟踪原水浊度与PAC投加量，待形成有效基线后再比较"
 else:
     pac_heat = "各药剂投加正常"
     pac_cause = "PAC单耗未触发异常，建议持续跟踪投加量与原水浊度"
@@ -586,7 +611,7 @@ panel_txt = f"""优化策略（表盘格式）
 
   高碳排热点：{pac_heat}
 
-  PAC投加：{PAC_KG:.1f} kg    单耗：{pac_today:.3f} kg/千吨水    前3月基准：{f"{pac_base:.3f} kg/千吨水" if pac_base else "N/A"}    偏差：{f"{pac_dev:+.1f}%（超出阈值±20%）" if pac_dev else "N/A"}
+  PAC投加：{PAC_KG:.1f} kg    单耗：{pac_today:.3f} kg/千吨水    前3月基准：{pac_base_text}    偏差：{pac_deviation_text}
 
   可能原因：{pac_cause}
 
@@ -622,8 +647,12 @@ api_diagnosis_s1 = {
 
 # ── /api/dashboard/diagnosis_page?type=2  优化策略-范围2 ──────────────────────
 e_vs_base    = raw.get("energy_vs_baseline_pct")
-e2_cause     = (f"电耗碳排较月度历史均值偏高+{e_vs_base:.1f}%"
-                if e_vs_base and e_vs_base > 0 else "电耗碳排处于正常范围，未发现明显异常")
+if e_vs_base is None:
+    e2_cause = "电耗月度基线无有效正值，暂不判断异常"
+elif raw.get("energy_baseline_triggered"):
+    e2_cause = f"电耗碳排较月度历史均值偏高+{e_vs_base:.1f}%"
+else:
+    e2_cause = "电耗碳排处于正常范围，未发现明显异常"
 # 无能耗异常时热点显示"无"，有异常才显示具体站房
 heat_pump_s2 = heat_pump
 api_diagnosis_s2 = {
@@ -779,7 +808,7 @@ if isinstance(l2_pac_d, dict) and l2_pac_d:
     pac_lines = [
         f"PAC今日{_compact_number(l2_pac_d.get('pac_unit_today',0), 3)}kg/千吨水",
         f"前3月基准{_compact_number(l2_pac_d.get('pac_baseline_monthly',0), 3)}kg/千吨水",
-        f"偏差{l2_pac_d.get('deviation_pct',0):+.1f}%（阈值±20%）",
+        f"偏差{l2_pac_d.get('deviation_pct',0):+.1f}%（阈值±{l2_pac_d.get('threshold_pct',20):.0f}%）",
         "建议检查投加泵校准，优化PAC投加曲线" if "L2" in l3t else "PAC单耗处于正常范围",
     ]
 
@@ -788,7 +817,7 @@ if isinstance(l3_naclo_d, dict) and l3_naclo_d:
     naclo_lines = [
         f"NaClO今日{_compact_number(l3_naclo_d.get('naclo_unit_today',0), 3)}kg/千吨水",
         f"前3月基准{_compact_number(l3_naclo_d.get('naclo_baseline_monthly',0), 3)}kg/千吨水",
-        f"偏差{l3_naclo_d.get('deviation_pct',0):+.1f}%（阈值±20%）",
+        f"偏差{l3_naclo_d.get('deviation_pct',0):+.1f}%（阈值±{l3_naclo_d.get('threshold_pct',20):.0f}%）",
         ("建议核查季节变化与消毒需求，复核NaClO投加参数"
          if "L3" in l3t else "NaClO单耗未触发异常，建议维持当前参数并持续监测"),
     ]
