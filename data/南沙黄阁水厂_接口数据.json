@@ -1,8 +1,7 @@
 {
   "_meta": {
-    "date": "2026-01-22",
-    "plant": "南沙黄阁水厂",
-    "spec_ref": "报表出入参.xlsx"
+    "date": "2026-05-11",
+    "plant": "南沙黄阁水厂"
   },
   "/api/scope/scope_1": {
     "code": 0,
@@ -157,7 +156,7 @@
       "actualLeakageRate": "5.0%",
       "dosage": "16.0",
       "leakageVolume": "0.8",
-      "optimizationStrategy": "各项指标一切正常"
+      "optimizationStrategy": "O3泄漏率接近阈值，建议加强在线监测并维持密封维护"
     }
   },
   "/api/dashboard/diagnosis_page?type=2": {
@@ -166,35 +165,38 @@
     "data": {
       "energyConsumptionHotspots": "无",
       "possibleCauses": "电耗碳排正常，送水泵房数据未接入SCADA，实际能耗可能更高",
-      "optimizationStrategy": "建议持续监测分时电耗，优化高峰时段设备调度"
+      "optimizationStrategy": "电耗未触发异常，建议维持当前调度并持续监测分时电耗"
     }
   },
   "/api/dashboard/diagnosis_page?type=3": {
     "code": 0,
     "msg": "",
     "data": {
-      "energyConsumptionHotspots": "PAC投加",
-      "dataAnalysis": "PAC投加9651kg，单耗27.85kg/千吨水，偏差+44.7%",
-      "possibleCauses": "原水水质波动，PAC投加量偏大，药剂投加效率偏低",
-      "optimizationStrategy": "建议检查混凝剂投加泵校准状态，复核混合搅拌器运行效率。结合原水浊度变化，优化PAC投加曲线"
+      "energyConsumptionHotspots": "各药剂投加正常",
+      "dataAnalysis": "PAC投加8kg，单耗0.02kg/千吨水",
+      "possibleCauses": "PAC单耗未触发异常，建议持续跟踪投加量与原水浊度",
+      "optimizationStrategy": "建议持续跟踪原水浊度，动态调整投加策略"
     }
   },
   "/api/dashboard/lowcarbon/realtime": {
     "code": 0,
     "msg": "",
     "data": {
-      "carbonEmissionIntensity": "0.0849",
-      "totalCarbonEmissions": "29430.58",
+      "carbonEmissionIntensity": "0.0268",
+      "totalCarbonEmissions": "9289.36",
       "scope1Leakage": "0.032",
-      "scope2ElectricityConsumption": "13411.33",
-      "scope3Total": "16019.43",
-      "scope3ChemicalProduction": "10492.43",
+      "scope2ElectricityConsumption": "3756.54",
+      "scope3Total": "5532.79",
+      "scope3ChemicalProduction": "5.79",
       "Scope3SludgeTransportation": "5527",
-      "electricityConsumption": "45.6",
-      "chemicalAgent": "35.7",
-      "sludgeTransportation": "18.8",
+      "electricityConsumption": "40.4",
+      "chemicalAgent": "0.1",
+      "sludgeTransportation": "59.5",
       "O3": "0.0",
-      "totalWaterSupply": "346536.0"
+      "totalWaterSupply": "346536.0",
+      "dataDate": "2026-05-11",
+      "waterVolumeSource": "默认值（无TJB流量数据）",
+      "optimizationStrategy": "污泥运输是当前主要碳排来源，建议优化脱水效率、运输批次与车辆调度"
     }
   },
   "/api/dashboard/lowcarbon/strategies": {
@@ -202,21 +204,25 @@
     "msg": "",
     "data": {
       "coagulationSedimentation": {
-        "pacDosagePerTon": "27.849"
+        "pacDosagePerTon": "0.024",
+        "optimizationStrategy": "建议持续跟踪原水浊度，动态调整投加策略"
       },
       "disinfection": {
-        "leakageRate": "5.0%"
+        "leakageRate": "5.0%",
+        "optimizationStrategy": "O3泄漏率接近阈值，建议加强在线监测并维持密封维护"
       },
       "pumpingStation": {
-        "waterIntakePumpingStation": "25373.94",
-        "waterDeliveryPumpingStation": "0.0"
+        "waterIntakePumpingStation": "7060.12",
+        "waterDeliveryPumpingStation": "0.0",
+        "optimizationStrategy": "电耗未触发异常，建议维持当前调度并持续监测分时电耗"
       },
       "dewateringRoom": {
-        "pamConsumption": "21.5",
+        "pamConsumption": "0.0",
         "sludgeVolume": "1001.23",
         "solidContent": "40%",
         "transportDistance": "115.0",
-        "sludgeTransportCE": "5527"
+        "sludgeTransportCE": "5527",
+        "optimizationStrategy": "建议优化脱水设备运行时段与污泥运输批次，降低PAM消耗和运输碳排"
       }
     }
   },
@@ -225,21 +231,15 @@
     "msg": "",
     "data": {
       "dayTouCEAnalysis": [
-        "峰值9时 617.7kgCO₂e，谷值3时 387",
-        "日均549.9kgCO₂e/h，超均值时段：无",
-        "建议将反冲洗/排泥转移至低谷时段"
+        "峰值8时 591.7kgCO₂e，谷值9时 48.1kgCO₂e",
+        "日均153.7kgCO₂e/h，超均值时段：0h,1h,2h",
+        "建议核查高碳时段运行设备，确认可移峰负荷后再调整排程"
       ],
       "FelCorrPacUcBenchmark": [
-        "今日PAC单耗 27.849 kg/千吨水",
-        "1月季节基准 19.250 kg/千吨水",
-        "偏差 +44.7%（阈值±20%）",
-        "建议检查投加泵校准，优化PAC投加曲线"
+        "PAC单耗未触发异常，建议持续监测"
       ],
       "wtSeasCorrNaClOUcBenchmark": [
-        "今日NaClO单耗 23.627 kg/千吨水",
-        "1月季节基准 26.360 kg/千吨水",
-        "偏差 -10.4%（阈值±20%）",
-        "建议根据水温季节变化动态调整工艺参数"
+        "NaClO单耗未触发异常，建议维持当前参数并持续监测"
       ]
     }
   }

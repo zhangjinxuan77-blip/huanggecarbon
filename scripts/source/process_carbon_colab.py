@@ -324,7 +324,7 @@ for chunk in pd.read_csv(
     chunk = chunk.dropna(subset=["_time", "_value"])
 
     # 小时级
-    chunk["hour"] = chunk["_time"].dt.floor("1H")
+    chunk["hour"] = chunk["_time"].dt.floor("1h")
 
 
 
@@ -1747,7 +1747,7 @@ def aggregate_period(df, freq):
 # 日周月年
 # ============================================
 
-hourly = aggregate_period(all_df, "H")
+hourly = aggregate_period(all_df, "h")
 daily = aggregate_period(all_df, "D")
 weekly = aggregate_period(all_df, "W")
 monthly = aggregate_period(all_df, "ME")
@@ -2319,7 +2319,7 @@ all_df.to_csv(OUTPUT_DIR / "hourly_source_detail.csv", index=False)
 # ============================================
 
 periods = {
-    "hourly": "H",
+    "hourly": "h",
     "daily": "D",
     "weekly": "W",
     "monthly": "ME",
@@ -5630,7 +5630,7 @@ def aggregate_period(df, freq):
 # 日周月年
 # ============================================
 
-hourly = aggregate_period(all_df, "H")
+hourly = aggregate_period(all_df, "h")
 daily = aggregate_period(all_df, "D")
 weekly = aggregate_period(all_df, "W")
 monthly = aggregate_period(all_df, "ME")
@@ -6202,7 +6202,7 @@ all_df.to_csv(OUTPUT_DIR / "hourly_source_detail.csv", index=False)
 # ============================================
 
 periods = {
-    "hourly": "H",
+    "hourly": "h",
     "daily": "D",
     "weekly": "W",
     "monthly": "ME",

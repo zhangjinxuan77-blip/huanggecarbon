@@ -5,8 +5,10 @@ GET /api/dashboard/diagnosis_page?type=1|2|3
 数据源：data/南沙黄阁水厂_接口数据.json
 """
 
-import os, json
-from fastapi import APIRouter, HTTPException, Query
+import os
+from fastapi import APIRouter, Query
+
+from .interface_data import ApiEnvelope, get_interface_response
 
 router = APIRouter()
 
@@ -19,17 +21,6 @@ FIXED_KEY = {
 }
 
 
-def _load() -> dict:
-    if not os.path.exists(DATA_PATH):
-        raise HTTPException(status_code=404, detail="未找到接口数据文件")
-    with open(DATA_PATH, encoding="utf-8") as f:
-        return json.load(f)
-
-
-@router.get("/api/dashboard/diagnosis_page")
+@router.get("/api/dashboard/diagnosis_page", response_model=ApiEnvelope)
 def diagnosis_page(type: int = Query(..., ge=1, le=3)):
-    data = _load()
-    key  = FIXED_KEY[type]
-    if key not in data:
-        raise HTTPException(status_code=404, detail=f"数据中不含 {key}")
-    return data[key]
+    return get_interface_response(DATA_PATH, FIXED_KEY[type])

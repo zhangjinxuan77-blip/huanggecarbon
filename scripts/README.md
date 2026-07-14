@@ -33,7 +33,7 @@
 如果部署到水厂服务器，建议使用下面这些环境变量，不需要改计算源码：
 
 ```bash
-export PROCESS_INPUT_FILE=/srv/huanggecarbon/input/process/20260511.csv
+export PROCESS_INPUT_FILE=/srv/huanggecarbon/input/process/20260511.tar.gz
 export PROCESS_WORK_DIR=/srv/huanggecarbon/work/process_latest
 export NETWORK_WORK_DIR=/srv/huanggecarbon/input/network
 export CARBON_API_DATA_DIR=/opt/huanggecarbon/data
@@ -41,7 +41,7 @@ export CARBON_API_DATA_DIR=/opt/huanggecarbon/data
 
 其中：
 
-- `PROCESS_INPUT_FILE`：工艺段每日原始 CSV。
+- `PROCESS_INPUT_FILE`：工艺段原始 CSV，或仅包含一个 CSV 的 `.tar.gz`/`.tar` 压缩包。脚本可直接流式读取压缩包，不要求先解压出约 10.8GB 的 CSV。
 - `PROCESS_WORK_DIR`：工艺段计算输出目录，脚本会从这里发布 `real-time output` 和 `report_history`。
 - `NETWORK_WORK_DIR`：管网计算目录，目录下需要包含 `管网监测点信息匹配` 和 `管网压力流量区域匹配`。
 - `CARBON_API_DATA_DIR`：后端接口实际读取的 `data` 目录。
@@ -69,7 +69,7 @@ cd "/Users/a/Desktop/黄阁/huanggecarbon 2026"
 ```bash
 cd /opt/huanggecarbon
 
-PROCESS_INPUT_FILE=/srv/huanggecarbon/input/process/20260511.csv \
+PROCESS_INPUT_FILE=/srv/huanggecarbon/input/process/20260511.tar.gz \
 NETWORK_WORK_DIR=/srv/huanggecarbon/input/network \
 ./scripts/run_all_calc.sh
 ```
@@ -78,11 +78,20 @@ NETWORK_WORK_DIR=/srv/huanggecarbon/input/network \
 
 ```bash
 .venv/bin/python scripts/run_process_calc.py \
-  --input /srv/huanggecarbon/input/process/20260511.csv \
+  --input /srv/huanggecarbon/input/process/20260511.tar.gz \
   --work-dir /srv/huanggecarbon/work/process_latest
 
 .venv/bin/python scripts/run_network_calc.py \
   --work-dir /srv/huanggecarbon/input/network
+```
+
+如果原始数据扫描已经生成 `碳排放核算/*.parquet`，但后续计算中断，可复用中间文件继续，避免再次扫描大型压缩包：
+
+```bash
+.venv/bin/python scripts/run_process_calc.py \
+  --input /srv/huanggecarbon/input/process/20260511.tar.gz \
+  --work-dir /srv/huanggecarbon/work/process_latest \
+  --reuse-extracted
 ```
 
 ## 定时任务示例

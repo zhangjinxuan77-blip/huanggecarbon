@@ -12,6 +12,8 @@ from typing import Dict, Any, List, Tuple
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 
+from .interface_data import ApiEnvelope
+
 router = APIRouter()
 
 BASE_DIR  = os.path.dirname(os.path.dirname(__file__))
@@ -29,7 +31,7 @@ def _load() -> pd.DataFrame:
     try:
         df = pd.read_excel(XLSX_PATH, sheet_name=SHEET)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"读取管网数据失败: {repr(e)}")
+        raise HTTPException(status_code=500, detail="读取管网数据失败") from e
     _CACHE[SHEET] = df
     return df
 
@@ -61,16 +63,24 @@ def _short(name: str, n: int = 6) -> str:
 def _diagnose(act: pd.DataFrame) -> Tuple[List[str], str]:
     diag: List[str] = []
     mismatch = False
+    zone_outlier = False
 
     # 规则1：点名碳排强度最高的具体区域（始终给出区域名，避免"某区域"含糊）
-    zi = act.groupby("zone")["I_kg_m3"].mean().sort_values(ascending=False)
-    top_zone = _short(zi.index[0], 4)
-    if len(zi) >= 2 and zi.iloc[-1] > 0:
-        spread = (zi.iloc[0] - zi.iloc[-1]) / zi.iloc[-1] * 100  # 最高区 vs 最低区
-        diag.append(f"{top_zone}区域碳排强度最高+{spread:.0f}%" if spread >= 15
-                    else f"{top_zone}区域碳排强度最高")
+    zones = act.dropna(subset=["zone"]).copy()
+    zones["zone"] = zones["zone"].astype(str).str.strip()
+    zones = zones[zones["zone"] != ""]
+    zi = zones.groupby("zone")["I_kg_m3"].mean().sort_values(ascending=False)
+    if zi.empty:
+        diag.append("区域信息缺失")
     else:
-        diag.append(f"{top_zone}区域碳排强度最高")
+        top_zone = _short(zi.index[0], 4)
+        if len(zi) >= 2 and zi.iloc[-1] > 0:
+            spread = (zi.iloc[0] - zi.iloc[-1]) / zi.iloc[-1] * 100  # 最高区 vs 最低区
+            zone_outlier = spread >= 15
+            diag.append(f"{top_zone}区域碳排强度最高+{spread:.0f}%" if spread >= 15
+                        else f"{top_zone}区域碳排强度最高")
+        else:
+            diag.append(f"{top_zone}区域碳排强度最高")
 
     # 规则2：压力流量失配（高压分位 + 低流分位）
     a = act.copy()
@@ -87,19 +97,24 @@ def _diagnose(act: pd.DataFrame) -> Tuple[List[str], str]:
     hot = act.nlargest(1, "CO2e_kg").iloc[0]
     diag.append(f"{_short(hot['point'])}碳排最高需关注")
 
-    rec = ("建议核查高碳排管段与高压低流点，排查漏损淤积，优化送水泵组压力调度"
-           if mismatch else
-           "管网整体运行平稳，建议维持现有调度并持续监测高碳排管段")
+    if mismatch and zone_outlier:
+        rec = "建议核查高碳排区域及高压低流点，排查漏损淤积，优化送水泵组压力调度"
+    elif mismatch:
+        rec = "建议核查高压低流点，排查漏损淤积，并复核送水泵组压力设定"
+    elif zone_outlier:
+        rec = "建议核查高碳排区域的流量与压力边界，排查漏损淤积并复核调度"
+    else:
+        rec = "管网整体运行平稳，建议维持现有调度并持续监测高碳排管段"
     return [d[:15] for d in diag[:3]], rec[:40]
 
 
-@router.post("/api/network/strategy")
+@router.post("/api/network/strategy", response_model=ApiEnvelope)
 def network_strategy() -> Dict[str, Any]:
     act = _latest_active(_load())
     if act.empty:
         return {"code": 0, "msg": "", "data": {
-            "diagAnalList": ["暂无管网监测数据"],
-            "recStrategy": "暂无数据，待管网监测数据接入后生成优化策略",
+            "diagAnalList": ["各区域碳排强度0", "压力与流量匹配正常", "暂无碳排热点"],
+            "recStrategy": "管网整体运行平稳，建议维持现有调度并持续监测",
         }}
     diag, rec = _diagnose(act)
     return {"code": 0, "msg": "", "data": {"diagAnalList": diag, "recStrategy": rec}}

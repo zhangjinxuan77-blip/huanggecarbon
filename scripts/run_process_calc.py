@@ -12,6 +12,7 @@ import argparse
 import os
 import shutil
 import sys
+import tarfile
 from datetime import datetime
 from pathlib import Path
 
@@ -22,10 +23,33 @@ COLAB_BASE = "/content/drive/MyDrive/中台一年历史数据"
 
 
 def _default_process_input() -> str:
-    local_input = PROJECT_DIR.parent / "中台一年历史数据" / "20260511.csv"
-    if local_input.exists():
-        return str(local_input)
+    candidates = [
+        PROJECT_DIR.parent / "Development" / "20260511.tar.gz",
+        PROJECT_DIR.parent / "Development" / "20260511.csv",
+        PROJECT_DIR.parent / "中台一年历史数据" / "20260511.tar.gz",
+        PROJECT_DIR.parent / "中台一年历史数据" / "20260511.csv",
+    ]
+    for local_input in candidates:
+        if local_input.exists():
+            return str(local_input)
     return "/srv/huanggecarbon/input/process/20260511.csv"
+
+
+def _validate_process_input(input_file: Path) -> None:
+    """Validate CSV input or a single-CSV tar archive readable by pandas."""
+    if not input_file.exists():
+        raise FileNotFoundError(f"未找到工艺段原始数据：{input_file}")
+    if not str(input_file).lower().endswith((".tar.gz", ".tgz", ".tar")):
+        return
+    with tarfile.open(input_file, "r:*") as archive:
+        csv_members = [
+            member for member in archive.getmembers()
+            if member.isfile() and member.name.lower().endswith(".csv")
+        ]
+    if len(csv_members) != 1:
+        raise ValueError(
+            f"压缩包必须且只能包含一个 CSV，当前发现 {len(csv_members)} 个：{input_file}"
+        )
 
 
 def _default_process_work_dir() -> str:
@@ -76,8 +100,36 @@ def _validate_process_outputs(work_dir: Path) -> None:
         raise FileNotFoundError("工艺段计算结果不完整：\n" + "\n".join(missing))
 
 
-def _patched_code(input_file: Path, work_dir: Path) -> str:
+def _patched_code(input_file: Path, work_dir: Path, reuse_extracted: bool = False) -> str:
     code = SOURCE_SCRIPT.read_text(encoding="utf-8")
+    # The exported notebook in the repository contains a duplicated full copy.
+    # Execute only the first copy so the same input is never calculated twice.
+    notebook_start = '"""实时数据整理拆分"""'
+    first_start = code.find(notebook_start)
+    second_start = code.find(notebook_start, first_start + len(notebook_start))
+    if first_start >= 0 and second_start >= 0:
+        history_marker = "# 报告历史数据导出"
+        colab_upload_marker = "from google.colab import userdata"
+        history_start = code.find(history_marker, second_start)
+        history_end = code.find(colab_upload_marker, history_start)
+        history_tail = (
+            code[history_start:history_end]
+            if history_start >= 0 and history_end > history_start
+            else ""
+        )
+        code = code[:second_start] + "\n" + history_tail
+        print("检测到重复 Notebook 内容，已保留首份计算流程及唯一历史导出段")
+    if reuse_extracted:
+        parquet_dir = work_dir / "碳排放核算"
+        parquet_files = list(parquet_dir.glob("*.parquet"))
+        if not parquet_files:
+            raise FileNotFoundError(f"没有可复用的 Parquet 中间文件：{parquet_dir}")
+        marker = '"""碳排计算"""'
+        marker_pos = code.find(marker)
+        if marker_pos < 0:
+            raise RuntimeError("源计算脚本中未找到碳排计算阶段标记")
+        code = code[marker_pos:]
+        print(f"复用 {len(parquet_files)} 个 Parquet 中间文件，跳过原始 CSV 扫描")
     code = code.replace(
         'input_file = "/content/drive/MyDrive/中台一年历史数据/20260511.csv"',
         f'input_file = r"{input_file}"',
@@ -86,21 +138,34 @@ def _patched_code(input_file: Path, work_dir: Path) -> str:
     return code
 
 
-def run_process_calc(input_file: Path, work_dir: Path, data_dir: Path, publish: bool) -> None:
+def run_process_calc(
+    input_file: Path,
+    work_dir: Path,
+    data_dir: Path,
+    publish: bool,
+    reuse_extracted: bool = False,
+) -> None:
     input_file = input_file.resolve()
     work_dir = work_dir.resolve()
     data_dir = data_dir.resolve()
 
-    if not input_file.exists():
-        raise FileNotFoundError(f"未找到工艺段原始 CSV：{input_file}")
+    _validate_process_input(input_file)
     if not SOURCE_SCRIPT.exists():
         raise FileNotFoundError(f"未找到源计算脚本：{SOURCE_SCRIPT}")
 
     work_dir.mkdir(parents=True, exist_ok=True)
+    # The original notebook creates many leaf folders with mkdir(exist_ok=True)
+    # and assumes these Colab parent folders already exist.
+    for parent in ["Outputs", "real-time output", "report_history", "碳排放核算"]:
+        (work_dir / parent).mkdir(parents=True, exist_ok=True)
     print(f"开始工艺段碳排计算：{input_file}")
     print(f"计算工作目录：{work_dir}")
 
-    code = _patched_code(input_file=input_file, work_dir=work_dir)
+    code = _patched_code(
+        input_file=input_file,
+        work_dir=work_dir,
+        reuse_extracted=reuse_extracted,
+    )
     namespace = {
         "__name__": "__main__",
         "__file__": str(SOURCE_SCRIPT),
@@ -131,7 +196,7 @@ def main() -> None:
     parser.add_argument(
         "--input",
         default=os.getenv("PROCESS_INPUT_FILE", _default_process_input()),
-        help="工艺段原始测点 CSV 文件",
+        help="工艺段原始测点 CSV，或仅包含一个 CSV 的 tar/tar.gz 压缩包",
     )
     parser.add_argument(
         "--work-dir",
@@ -144,6 +209,11 @@ def main() -> None:
         help="FastAPI data 目录",
     )
     parser.add_argument("--publish", action="store_true", help="计算成功后发布到 API data 目录")
+    parser.add_argument(
+        "--reuse-extracted",
+        action="store_true",
+        help="复用工作目录中已生成的 Parquet，跳过原始 CSV/压缩包扫描",
+    )
     args = parser.parse_args()
 
     run_process_calc(
@@ -151,6 +221,7 @@ def main() -> None:
         work_dir=Path(args.work_dir),
         data_dir=Path(args.data_dir),
         publish=args.publish,
+        reuse_extracted=args.reuse_extracted,
     )
 
 
