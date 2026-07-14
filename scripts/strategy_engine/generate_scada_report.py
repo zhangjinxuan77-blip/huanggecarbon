@@ -488,11 +488,11 @@ o3_leak_rate   = O3_LEAKAGE_RATE
 o3_over        = max(0.0, o3_leak_rate - O3_THRESHOLD)
 o3_over_str    = f"{o3_over*100:.1f}%" if o3_over > 0 else "0（未超标）"
 if raw.get("ozone_leakage_high"):
-    o3_strategy = "建议检查臭氧发生器密封件及管道接口，排查泄露点"
+    o3_strategy = "O3超阈值，检查密封件及管道接口"
 elif o3_leak_rate >= O3_THRESHOLD * 0.9:
     o3_strategy = "O3接近阈值，建议加强监测和密封维护"
 else:
-    o3_strategy = "O3泄漏率未超阈值，建议维持当前密封维护与监测"
+    o3_strategy = "O3未超阈值，维持密封维护和监测"
 
 # 范围2：能耗热点
 pump_names     = [ps["station_id"] for ps in flags.get("raw_data_summary", {}).get("pump_stations", [])]
