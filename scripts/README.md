@@ -9,6 +9,7 @@
 - `run_process_calc.py`：工艺段计算包装脚本，负责替换 Colab 路径、运行计算、发布 `real-time output` 和 `history`。
 - `run_network_calc.py`：管网计算包装脚本，负责替换 Colab 路径、运行计算、发布管网 Excel。
 - `run_all_calc.sh`：一键运行工艺段计算和管网计算。
+- `sync_existing_outputs.py`：已有计算结果同步脚本，不重新计算，只把 `中台一年历史数据` 和 `管网计算` 里的结果发布到后端 `data`。
 
 ## 服务器推荐目录
 
@@ -46,6 +47,24 @@ export CARBON_API_DATA_DIR=/opt/huanggecarbon/data
 - `CARBON_API_DATA_DIR`：后端接口实际读取的 `data` 目录。
 
 ## 手动运行示例
+
+如果两个解压后的文件夹已经包含计算结果，只需要刷新后端 `data`，优先用这个命令：
+
+```bash
+cd "/Users/a/Desktop/黄阁/huanggecarbon 2026"
+.venv/bin/python scripts/sync_existing_outputs.py
+```
+
+它会自动按下面关系同步：
+
+```text
+../中台一年历史数据/real-time output -> data/real-time output
+../中台一年历史数据/report_history   -> data/history
+../管网计算/管网压力流量区域匹配/管网碳排_按压力监测点_坐标匹配.xlsx
+                                  -> data/管网碳排_按压力监测点_坐标匹配.xlsx
+```
+
+如果要重新执行完整计算，再运行：
 
 ```bash
 cd /opt/huanggecarbon
