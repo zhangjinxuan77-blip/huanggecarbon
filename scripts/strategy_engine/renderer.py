@@ -151,12 +151,14 @@ def _coagulation(flags: dict) -> str:
     u1 = l2d.get("U1")
     if u1:
         pac_unit = u1["pac_unit_kg_per_kton"]
-        if u1["pac_3m_avg"] is not None:
-            vs = u1["vs_avg_pct"]
+        vs = u1.get("vs_avg_pct")
+        if vs is not None:
             if vs > 0:
                 pac_status = f"PAC单耗{pac_unit:.3f} kg/千吨水（较3月均值+{vs:.1f}%）"
             else:
                 pac_status = f"PAC单耗{pac_unit:.3f} kg/千吨水（较3月均值{vs:.1f}%）"
+        elif u1.get("pac_3m_avg") is not None:
+            pac_status = f"PAC单耗{pac_unit:.3f} kg/千吨水（历史均值无有效正值，暂不比较）"
         else:
             pac_status = f"PAC单耗{pac_unit:.3f} kg/千吨水（历史均值未标定）"
     else:
