@@ -164,7 +164,7 @@
     "msg": "",
     "data": {
       "energyConsumptionHotspots": "无",
-      "possibleCauses": "电耗碳排正常，送水泵房数据未接入SCADA，实际能耗可能更高",
+      "possibleCauses": "电耗碳排处于正常范围，未发现明显异常",
       "optimizationStrategy": "电耗未触发异常，建议维持当前调度并持续监测分时电耗"
     }
   },
@@ -231,15 +231,15 @@
     "msg": "",
     "data": {
       "dayTouCEAnalysis": [
-        "峰值8时 591.7kgCO₂e，谷值9时 48.1kgCO₂e",
-        "日均153.7kgCO₂e/h，超均值时段：0h,1h,2h",
-        "建议核查高碳时段运行设备，确认可移峰负荷后再调整排程"
+        "峰8时591.7/谷9时48.1kgCO₂e",
+        "均153.7kgCO₂e/h；高0/1/2h",
+        "建议核查高碳时段设备，确认后再调整排程"
       ],
       "FelCorrPacUcBenchmark": [
         "PAC单耗未触发异常，建议持续监测"
       ],
       "wtSeasCorrNaClOUcBenchmark": [
-        "NaClO单耗未触发异常，建议维持当前参数并持续监测"
+        "NaClO单耗正常，建议维持参数并监测"
       ]
     }
   }
