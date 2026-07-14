@@ -17,6 +17,19 @@ def load_config() -> dict:
         return yaml.safe_load(f)
 
 
+def _baseline_label(months: list[str] | None, month: int) -> str:
+    """返回与实际基准来源一致的展示名称。"""
+    normalized = [str(value) for value in (months or []) if value]
+    if not normalized:
+        return f"{month}月季节基准"
+    period = (
+        normalized[0]
+        if len(normalized) == 1
+        else f"{normalized[0]}至{normalized[-1]}"
+    )
+    return f"前{len(normalized)}月基准（{period}）"
+
+
 def _calc_chemical_carbon(cfg: dict, cs, di) -> dict:
     """
     化学品碳排分项验算（有 kg/day 字段时执行）。
@@ -80,6 +93,7 @@ def evaluate(
     ef = cfg["emission_factors"]
     defaults = cfg["defaults"]
     baselines = baselines or {}
+    shared_baseline_months = list(baselines.get("months") or [])
 
     plant = request.plant
     units = request.units
@@ -235,7 +249,9 @@ def evaluate(
             prev_intensity = _prev_intensity
             if abs(carbon_intensity_delta_pct) > t.get("carbon_intensity_delta_pct", 0.10):
                 direction = "上升" if carbon_intensity_delta_pct > 0 else "下降"
-                layer1_flags.append(f"carbon_intensity_{direction}")
+                # 规则只把显著上升作为异常触发；显著下降保留为趋势信息。
+                if direction == "上升":
+                    layer1_flags.append("carbon_intensity_上升")
                 layer1_details["M2"] = {
                     "intensity_today": round(current_comparable_intensity, 4),
                     "intensity_prev": round(_prev_intensity, 4),
@@ -261,7 +277,9 @@ def evaluate(
     pac_unit = None
     if cs.pac_consumption_kg is not None and water_volume > 0:
         pac_unit = cs.pac_consumption_kg / (water_volume / 1000.0)
-        pac_ref = ref.get("pac_unit_consumption_3m_avg")
+        pac_ref = baselines.get("pac_unit")
+        if pac_ref is None:
+            pac_ref = ref.get("pac_unit_consumption_3m_avg")
         layer2_details["U1"] = {
             "pac_unit_kg_per_kton": round(pac_unit, 3),
             "pac_3m_avg": pac_ref,
@@ -297,6 +315,12 @@ def evaluate(
     # 原水水质信号代理：无在线水质仪表时，PAC单耗偏高是上游负荷升高的最直接可观测指标
     pac_monthly = cfg.get("pac_unit_monthly_baseline", [None] * 12)
     pac_baseline = baselines.get("pac_unit")
+    pac_baseline_months = shared_baseline_months if pac_baseline is not None else []
+    pac_baseline_label = (
+        _baseline_label(pac_baseline_months, month)
+        if pac_baseline is not None
+        else f"{month}月季节基准"
+    )
     if pac_baseline is None:
         pac_baseline = pac_monthly[month - 1] if len(pac_monthly) >= month else None
     if pac_unit is not None and pac_baseline is not None:
@@ -308,6 +332,8 @@ def evaluate(
             "deviation_pct": round(pac_deviation * 100, 1),
             "threshold_pct": l2_threshold * 100,
             "month": month,
+            "baseline_label": pac_baseline_label,
+            "baseline_months": pac_baseline_months,
         }
         if pac_deviation > l2_threshold:
             layer3_rules_triggered.append("L2")
@@ -317,6 +343,12 @@ def evaluate(
     naclo_kg = di.sodium_hypochlorite_consumption_kg
     naclo_monthly = cfg.get("naclo_unit_monthly_baseline", [None] * 12)
     naclo_baseline = baselines.get("naclo_unit")
+    naclo_baseline_months = shared_baseline_months if naclo_baseline is not None else []
+    naclo_baseline_label = (
+        _baseline_label(naclo_baseline_months, month)
+        if naclo_baseline is not None
+        else f"{month}月季节基准"
+    )
     if naclo_baseline is None:
         naclo_baseline = naclo_monthly[month - 1] if len(naclo_monthly) >= month else None
     if naclo_kg is not None and naclo_baseline is not None and water_volume > 0:
@@ -329,6 +361,8 @@ def evaluate(
             "deviation_pct": round(naclo_deviation * 100, 1),
             "threshold_pct": l3_threshold * 100,
             "month": month,
+            "baseline_label": naclo_baseline_label,
+            "baseline_months": naclo_baseline_months,
         }
         if abs(naclo_deviation) > l3_threshold:
             layer3_rules_triggered.append("L3")

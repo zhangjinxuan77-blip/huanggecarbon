@@ -54,6 +54,19 @@ def _warn(text: str) -> str:
     return f"⚠ {text}"
 
 
+def _energy_efficiency_strategy(summary: dict) -> str:
+    """按当前电耗最高的站点生成排查建议。"""
+    stations = [
+        station
+        for station in summary.get("pump_stations", [])
+        if station.get("energy_consumption", 0) > 0
+    ]
+    if not stations:
+        return "建议核查全厂高耗能设备运行效率并优化调度。"
+    hotspot = max(stations, key=lambda station: station["energy_consumption"])
+    return f"建议优先核查{hotspot['station_id']}运行效率并优化设备调度。"
+
+
 # ── Layer 1：全厂摘要 ─────────────────────────────────────────────────────────
 
 def _render_layer1(flags: dict) -> str:
@@ -80,7 +93,7 @@ def _render_layer1(flags: dict) -> str:
     elif "carbon_intensity_上升" in l1:
         delta = abs(s["carbon_intensity_delta_pct"])
         trend = _warn(f"较昨日上升{delta:.1f}%")
-    elif "carbon_intensity_下降" in l1:
+    elif l1d.get("M2", {}).get("direction") == "下降":
         delta = abs(s["carbon_intensity_delta_pct"])
         trend = f"较昨日下降{delta:.1f}%"
     else:
@@ -206,12 +219,13 @@ def _sludge_dewatering(flags: dict) -> str:
 
 def _render_l2_pac(d: dict) -> str:
     dev = d["deviation_pct"]
+    baseline_label = d.get("baseline_label", f"{d['month']}月季节基准")
     triggered = d.get("triggered", abs(dev) > d["threshold_pct"])
     direction = "高于" if dev > 0 else "低于"
     sign = "+" if dev > 0 else ""
     if triggered and dev > 0:
         conclusion = _warn("PAC单耗显著偏高")
-        strategy  = "  → 建议优化曝气系统提前响应，避免过负荷运行。"
+        strategy  = "  → 建议检查混凝剂投加泵校准状态，复核混合搅拌器运行效率，并结合原水浊度优化PAC投加曲线。"
     elif triggered and dev < 0:
         conclusion = _ok("PAC单耗低于季节基准")
         strategy  = None
@@ -219,9 +233,9 @@ def _render_l2_pac(d: dict) -> str:
         conclusion = _ok(f"PAC单耗在季节基准范围内（偏差{sign}{dev:.1f}%）")
         strategy  = None
     lines = [
-        f"前端负荷关联 — PAC单耗{direction}{d['month']}月基准",
+        f"前端负荷关联 — PAC单耗{direction}{baseline_label}",
         f"  今日PAC单耗  {d['pac_unit_today']:.3f} kg/千吨水",
-        f"  {d['month']}月季节基准  {d['pac_baseline_monthly']:.3f} kg/千吨水",
+        f"  {baseline_label}  {d['pac_baseline_monthly']:.3f} kg/千吨水",
         f"  偏差  {sign}{dev:.1f}%（阈值±{d['threshold_pct']:.0f}%）",
         f"  {conclusion}",
     ]
@@ -232,6 +246,7 @@ def _render_l2_pac(d: dict) -> str:
 
 def _render_l3_naclo(d: dict) -> str:
     dev = d["deviation_pct"]
+    baseline_label = d.get("baseline_label", f"{d['month']}月季节基准")
     triggered = d.get("triggered", abs(dev) > d["threshold_pct"])
     direction = "高于" if dev > 0 else "低于"
     sign = "+" if dev > 0 else ""
@@ -242,9 +257,9 @@ def _render_l3_naclo(d: dict) -> str:
         conclusion = _ok(f"NaClO单耗在季节基准范围内（偏差{sign}{dev:.1f}%）")
         strategy   = "  → 建议根据水温季节变化动态调整工艺参数预设值。"
     lines = [
-        f"水温季节相关性 — NaClO单耗{direction}{d['month']}月基准",
+        f"水温季节相关性 — NaClO单耗{direction}{baseline_label}",
         f"  今日NaClO单耗  {d['naclo_unit_today']:.3f} kg/千吨水",
-        f"  {d['month']}月季节基准  {d['naclo_baseline_monthly']:.3f} kg/千吨水",
+        f"  {baseline_label}  {d['naclo_baseline_monthly']:.3f} kg/千吨水",
         f"  偏差  {sign}{dev:.1f}%（阈值±{d['threshold_pct']:.0f}%）",
         f"  {conclusion}",
         strategy,
@@ -353,7 +368,7 @@ def _render_full_report(
         trend_str = "→ 无昨日数据"
     elif "carbon_intensity_上升" in l1:
         trend_str = f"⚠ 较昨日 +{abs(delta_pct):.1f}%"
-    elif "carbon_intensity_下降" in l1:
+    elif l1d.get("M2", {}).get("direction") == "下降":
         trend_str = f"↓ 较昨日 -{abs(delta_pct):.1f}%"
     else:
         trend_str = f"→ 较昨日 {delta_pct:+.1f}%"
@@ -397,7 +412,7 @@ def _render_full_report(
         strategy1_lines.append("  → 建议关注药剂投加系统运行状态，复核投加量或药剂类型。")
         strategy1_lines.append("  → 建议评估光伏系统发电效率，或考虑增加其他可再生能源。")
     if "carbon_intensity_上升" in l1 or s.get("energy_baseline_triggered"):
-        strategy1_lines.append("  → 建议结合能耗与药耗变化，优先排查送水泵房与臭氧系统运行效率。")
+        strategy1_lines.append(f"  → {_energy_efficiency_strategy(s)}")
     if strategy1_lines:
         section1_lines += [""] + strategy1_lines
 

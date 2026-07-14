@@ -414,10 +414,34 @@ print(f"碳排数据已保存：{out_carbon.name}")
 
 # ── 8. 保存优化策略 TXT ───────────────────────────────────────────────────────
 raw     = flags.get("raw_data_summary", {})
-l1      = flags.get("l1_flags", [])
+l1      = flags.get("layer1_flags", [])
 l3d     = flags.get("layer3_details", {})
 l3t     = set(flags.get("layer3_rules_triggered", []))
 l1d     = flags.get("layer1_details", {})
+
+# 能耗异常时只把当前电耗最高的站点标记为热点，策略与热点保持一致。
+energy_stations = [
+    station
+    for station in raw.get("pump_stations", [])
+    if station.get("energy_consumption", 0) > 0
+]
+dominant_energy_station = (
+    max(energy_stations, key=lambda station: station["energy_consumption"])
+    if energy_stations else None
+)
+if raw.get("energy_baseline_triggered"):
+    heat_pump = (
+        dominant_energy_station["station_id"]
+        if dominant_energy_station else "全厂电耗"
+    )
+    e2_strategy = (
+        f"建议核查{heat_pump}运行效率并优化设备调度"
+        if dominant_energy_station
+        else "建议核查全厂高耗能设备运行效率并优化调度"
+    )
+else:
+    heat_pump = "无"
+    e2_strategy = "电耗未触发异常，建议维持当前调度并持续监测分时电耗"
 
 # 范围1
 s1_lines = ["范围1  直接排放（O₃泄露）", ""]
@@ -435,7 +459,7 @@ else:
 s2_lines = ["范围2  间接排放（电力）", ""]
 if raw.get("energy_baseline_triggered"):
     s2_lines.append("  ⚠ 电耗碳排超出月度基准，建议：")
-    s2_lines.append("  → 建议结合能耗与药耗变化，优先排查送水泵房与臭氧系统运行效率。")
+    s2_lines.append(f"  → {e2_strategy}。")
 else:
     s2_lines.append("  ✓ 电耗碳排处于正常范围。")
 l1_hourly = l3d.get("L1", {})
@@ -495,16 +519,9 @@ else:
     o3_strategy = "O3未超阈值，维持密封维护和监测"
 
 # 范围2：能耗热点
-pump_names     = [ps["station_id"] for ps in flags.get("raw_data_summary", {}).get("pump_stations", [])]
-heat_pump      = ("、".join(pump_names) if pump_names else "原水提升泵房") \
-                 if raw.get("energy_baseline_triggered") else "无"
 e_vs_base      = raw.get("energy_vs_baseline_pct")
 e_base_str     = f"电耗碳排较月度历史均值偏高 +{e_vs_base:.1f}%" if e_vs_base and e_vs_base > 0 \
                  else "电耗碳排处于正常范围"
-if raw.get("energy_baseline_triggered"):
-    e2_strategy = "建议结合能耗与药耗变化，优先排查送水泵房与臭氧系统运行效率"
-else:
-    e2_strategy = "电耗未触发异常，建议维持当前调度并持续监测分时电耗"
 
 # 范围3：PAC
 l2_pac         = l3d.get("L2", {})
