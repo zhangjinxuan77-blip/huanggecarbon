@@ -490,7 +490,7 @@ o3_over_str    = f"{o3_over*100:.1f}%" if o3_over > 0 else "0（未超标）"
 if raw.get("ozone_leakage_high"):
     o3_strategy = "建议检查臭氧发生器密封件及管道接口，排查泄露点"
 elif o3_leak_rate >= O3_THRESHOLD * 0.9:
-    o3_strategy = "O3泄漏率接近阈值，建议加强在线监测并维持密封维护"
+    o3_strategy = "O3接近阈值，建议加强监测和密封维护"
 else:
     o3_strategy = "O3泄漏率未超阈值，建议维持当前密封维护与监测"
 
@@ -514,7 +514,7 @@ pac_dev        = l2_pac.get("deviation_pct")
 pac_comparable = pac_base is not None and pac_dev is not None
 if "L2" in l3t:
     pac_heat = "PAC投加"
-    pac_cause = "PAC单耗偏高，可能与原水水质或投加设备效率有关，需结合浊度核查"
+    pac_cause = "PAC单耗偏高，可能与水质或投加设备效率有关"
     pac_strategy = "建议检查混凝剂投加泵校准状态，复核混合搅拌器运行效率。结合原水浊度变化，优化PAC投加曲线"
 else:
     pac_heat = "各药剂投加正常"
@@ -609,6 +609,42 @@ api_diagnosis_s3 = {
         "optimizationStrategy":      pac_strategy,
     }
 }
+
+
+def _validate_diagnosis_contract(payload: dict, limits: dict[str, int], name: str) -> None:
+    """校验前端诊断接口规定的字符串类型与最大字符数。"""
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        raise ValueError(f"{name}.data 必须是对象")
+    for field, max_chars in limits.items():
+        value = data.get(field)
+        if not isinstance(value, str):
+            raise ValueError(f"{name}.{field} 必须是字符串")
+        if len(value) > max_chars:
+            raise ValueError(
+                f"{name}.{field} 超过前端限制：{len(value)}/{max_chars}字符"
+            )
+
+
+_validate_diagnosis_contract(
+    api_diagnosis_s1,
+    {"optimizationStrategy": 20},
+    "diagnosis_page?type=1",
+)
+_validate_diagnosis_contract(
+    api_diagnosis_s2,
+    {"possibleCauses": 50, "optimizationStrategy": 30},
+    "diagnosis_page?type=2",
+)
+_validate_diagnosis_contract(
+    api_diagnosis_s3,
+    {
+        "dataAnalysis": 50,
+        "possibleCauses": 25,
+        "optimizationStrategy": 50,
+    },
+    "diagnosis_page?type=3",
+)
 
 # ── /api/dashboard/lowcarbon/strategies  工艺策略-单元优化 ────────────────────
 # 保留原有指标字段，并为每个工艺单元补充可直接展示的优化策略。

@@ -169,7 +169,7 @@
       "actualLeakageRate": "5.0%",
       "dosage": "437.76",
       "leakageVolume": "21.89",
-      "optimizationStrategy": "O3泄漏率接近阈值，建议加强在线监测并维持密封维护"
+      "optimizationStrategy": "O3接近阈值，建议加强监测和密封维护"
     }
   },
   "/api/dashboard/diagnosis_page?type=2": {
@@ -187,7 +187,7 @@
     "data": {
       "energyConsumptionHotspots": "PAC投加",
       "dataAnalysis": "PAC投加113kg，单耗0.33kg/千吨水，偏差+269.0%",
-      "possibleCauses": "PAC单耗偏高，可能与原水水质或投加设备效率有关，需结合浊度核查",
+      "possibleCauses": "PAC单耗偏高，可能与水质或投加设备效率有关",
       "optimizationStrategy": "建议检查混凝剂投加泵校准状态，复核混合搅拌器运行效率。结合原水浊度变化，优化PAC投加曲线"
     }
   },
@@ -223,7 +223,7 @@
       },
       "disinfection": {
         "leakageRate": "5.0%",
-        "optimizationStrategy": "O3泄漏率接近阈值，建议加强在线监测并维持密封维护"
+        "optimizationStrategy": "O3接近阈值，建议加强监测和密封维护"
       },
       "pumpingStation": {
         "waterIntakePumpingStation": "21211.77",
