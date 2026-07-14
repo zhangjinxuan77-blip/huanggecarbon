@@ -19,6 +19,32 @@
 /srv/huanggecarbon/work          # 工艺段计算中间结果
 ```
 
+## 需要按部署环境确认的路径
+
+脚本会优先自动识别当前这种本地目录：
+
+```text
+/Users/a/Desktop/黄阁/huanggecarbon 2026
+/Users/a/Desktop/黄阁/中台一年历史数据
+/Users/a/Desktop/黄阁/管网计算
+```
+
+如果部署到水厂服务器，建议使用下面这些环境变量，不需要改计算源码：
+
+```bash
+export PROCESS_INPUT_FILE=/srv/huanggecarbon/input/process/20260511.csv
+export PROCESS_WORK_DIR=/srv/huanggecarbon/work/process_latest
+export NETWORK_WORK_DIR=/srv/huanggecarbon/input/network
+export CARBON_API_DATA_DIR=/opt/huanggecarbon/data
+```
+
+其中：
+
+- `PROCESS_INPUT_FILE`：工艺段每日原始 CSV。
+- `PROCESS_WORK_DIR`：工艺段计算输出目录，脚本会从这里发布 `real-time output` 和 `report_history`。
+- `NETWORK_WORK_DIR`：管网计算目录，目录下需要包含 `管网监测点信息匹配` 和 `管网压力流量区域匹配`。
+- `CARBON_API_DATA_DIR`：后端接口实际读取的 `data` 目录。
+
 ## 手动运行示例
 
 ```bash

@@ -2,14 +2,33 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_PARENT="$(cd "$PROJECT_DIR/.." && pwd)"
 PYTHON="${PYTHON:-$PROJECT_DIR/.venv/bin/python}"
 
-PROCESS_INPUT_FILE="${PROCESS_INPUT_FILE:-/srv/huanggecarbon/input/process/20260511.csv}"
-PROCESS_WORK_DIR="${PROCESS_WORK_DIR:-/srv/huanggecarbon/work/process_latest}"
-NETWORK_WORK_DIR="${NETWORK_WORK_DIR:-/srv/huanggecarbon/input/network}"
+DEFAULT_PROCESS_INPUT="$PROJECT_PARENT/中台一年历史数据/20260511.csv"
+DEFAULT_PROCESS_WORK_DIR="$PROJECT_PARENT/中台一年历史数据"
+DEFAULT_NETWORK_WORK_DIR="$PROJECT_PARENT/管网计算"
+
+if [[ ! -f "$DEFAULT_PROCESS_INPUT" ]]; then
+  DEFAULT_PROCESS_INPUT="/srv/huanggecarbon/input/process/20260511.csv"
+fi
+if [[ ! -d "$DEFAULT_PROCESS_WORK_DIR" ]]; then
+  DEFAULT_PROCESS_WORK_DIR="/srv/huanggecarbon/work/process_latest"
+fi
+if [[ ! -d "$DEFAULT_NETWORK_WORK_DIR" ]]; then
+  DEFAULT_NETWORK_WORK_DIR="/srv/huanggecarbon/input/network"
+fi
+
+PROCESS_INPUT_FILE="${PROCESS_INPUT_FILE:-$DEFAULT_PROCESS_INPUT}"
+PROCESS_WORK_DIR="${PROCESS_WORK_DIR:-$DEFAULT_PROCESS_WORK_DIR}"
+NETWORK_WORK_DIR="${NETWORK_WORK_DIR:-$DEFAULT_NETWORK_WORK_DIR}"
 CARBON_API_DATA_DIR="${CARBON_API_DATA_DIR:-$PROJECT_DIR/data}"
 
 echo "== 黄阁碳排自动计算开始：$(date '+%F %T') =="
+echo "工艺段原始 CSV：$PROCESS_INPUT_FILE"
+echo "工艺段工作目录：$PROCESS_WORK_DIR"
+echo "管网工作目录：$NETWORK_WORK_DIR"
+echo "API data 目录：$CARBON_API_DATA_DIR"
 
 "$PYTHON" "$PROJECT_DIR/scripts/run_process_calc.py" \
   --input "$PROCESS_INPUT_FILE" \

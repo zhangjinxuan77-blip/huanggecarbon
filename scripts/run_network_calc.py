@@ -21,6 +21,13 @@ API_NETWORK_XLSX = "管网碳排_按压力监测点_坐标匹配.xlsx"
 CALC_NETWORK_XLSX = "管网碳排结果_按压力监测点_坐标匹配.xlsx"
 
 
+def _default_network_work_dir() -> str:
+    local_work_dir = PROJECT_DIR.parent / "管网计算"
+    if local_work_dir.exists():
+        return str(local_work_dir)
+    return "/srv/huanggecarbon/input/network"
+
+
 def _clean_notebook_code(code: str) -> str:
     lines = []
     for line in code.splitlines():
@@ -94,7 +101,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run network carbon calculation.")
     parser.add_argument(
         "--work-dir",
-        default=os.getenv("NETWORK_WORK_DIR", "/srv/huanggecarbon/input/network"),
+        default=os.getenv("NETWORK_WORK_DIR", _default_network_work_dir()),
         help="管网计算工作目录，里面放管网原始文件",
     )
     parser.add_argument(

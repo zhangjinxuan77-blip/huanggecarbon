@@ -21,6 +21,20 @@ SOURCE_SCRIPT = PROJECT_DIR / "scripts" / "source" / "process_carbon_colab.py"
 COLAB_BASE = "/content/drive/MyDrive/中台一年历史数据"
 
 
+def _default_process_input() -> str:
+    local_input = PROJECT_DIR.parent / "中台一年历史数据" / "20260511.csv"
+    if local_input.exists():
+        return str(local_input)
+    return "/srv/huanggecarbon/input/process/20260511.csv"
+
+
+def _default_process_work_dir() -> str:
+    local_work_dir = PROJECT_DIR.parent / "中台一年历史数据"
+    if local_work_dir.exists():
+        return str(local_work_dir)
+    return "/srv/huanggecarbon/work/process_latest"
+
+
 def _copytree_replace(src: Path, dst: Path) -> None:
     if not src.exists():
         raise FileNotFoundError(f"未找到计算结果目录：{src}")
@@ -116,12 +130,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run process carbon calculation.")
     parser.add_argument(
         "--input",
-        default=os.getenv("PROCESS_INPUT_FILE", "/srv/huanggecarbon/input/process/20260511.csv"),
+        default=os.getenv("PROCESS_INPUT_FILE", _default_process_input()),
         help="工艺段原始测点 CSV 文件",
     )
     parser.add_argument(
         "--work-dir",
-        default=os.getenv("PROCESS_WORK_DIR", "/srv/huanggecarbon/work/process_latest"),
+        default=os.getenv("PROCESS_WORK_DIR", _default_process_work_dir()),
         help="计算工作目录",
     )
     parser.add_argument(
