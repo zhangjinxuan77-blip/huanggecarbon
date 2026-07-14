@@ -87,8 +87,22 @@ def _number(row: pd.Series, column: str, default: float = 0.0) -> float:
 def _shared_periods(scope_daily: pd.DataFrame, scope_hourly: pd.DataFrame):
     """返回公共结果的最新日期和最新完整日报日期（UTC日桶）。"""
     daily_dates = sorted(set(_timestamps(scope_daily, "period_start").dt.date))
-    latest_hour = _timestamps(scope_hourly, "period_start").max()
+    hourly_values = (
+        _timestamps(scope_hourly, "period_start")
+        .dropna()
+        .drop_duplicates()
+        .sort_values()
+    )
+    latest_window = hourly_values.tail(24)
+    if (
+        len(latest_window) < 24
+        or not latest_window.diff().dropna().eq(pd.Timedelta(hours=1)).all()
+    ):
+        raise ValueError("公共滚动小时结果不足24条或时间不连续")
+    latest_hour = latest_window.iloc[-1]
     latest_date = daily_dates[-1]
+    if latest_date != latest_hour.date():
+        raise ValueError("公共日报与滚动小时结果的最新日期不一致")
 
     # 当前UTC日尚未走到23时，则最新日汇总仍是部分日，只能用于实时展示。
     complete_ceiling = latest_hour.date()
@@ -203,15 +217,25 @@ def _shared_monthly_baselines(report_date) -> dict[str, object]:
 
     pac_by_month = _monthly_chemical_series(["15"])
     naclo_by_month = _monthly_chemical_series(["17", "18"])
-    report_key = (report_date.year, report_date.month)
-    common_months = sorted(
+    available_months = {
         key
         for key in set(water_by_month) & set(energy_by_month)
         & set(pac_by_month) & set(naclo_by_month)
-        if key < report_key and water_by_month[key] > 0 and month_days[key] > 0
-    )[-3:]
-    if not common_months:
-        raise ValueError("公共月度生成结果不足，无法计算策略基准")
+        if water_by_month[key] > 0 and month_days[key] > 0
+    }
+    month_cursor = report_date.replace(day=1)
+    common_months = []
+    for _ in range(3):
+        month_cursor = month_cursor - timedelta(days=1)
+        common_months.append((month_cursor.year, month_cursor.month))
+        month_cursor = month_cursor.replace(day=1)
+    common_months.reverse()
+    missing_months = [key for key in common_months if key not in available_months]
+    if missing_months:
+        missing_text = "、".join(f"{year:04d}-{month:02d}" for year, month in missing_months)
+        raise ValueError(
+            f"公共月度生成结果缺少报告日前连续完整月份：{missing_text}"
+        )
 
     return {
         "energy_carbon": sum(
@@ -322,12 +346,9 @@ units = ProcessUnits(
 )
 
 previous_plant = None
-previous_dates = sorted(
-    value for value in set(_timestamps(scope_daily, "period_start").dt.date)
-    if value < report_day
-)
-if previous_dates:
-    previous_day = previous_dates[-1]
+previous_day = report_day - timedelta(days=1)
+available_daily_dates = set(_timestamps(scope_daily, "period_start").dt.date)
+if previous_day in available_daily_dates:
     previous_scope = _row_for_date(scope_daily, "period_start", previous_day)
     previous_scope2 = _row_for_date(scope2_daily, "period_start", previous_day)
     previous_scope3 = _row_for_date(scope3_daily, "period_start", previous_day)

@@ -38,6 +38,8 @@ def generate_report(request: ReportRequest, flags: dict) -> ReportResponse:
 
 def _round_pcts(*pcts: float) -> list[float]:
     """四舍五入一组百分比，并将误差补偿到最大项，确保合计精确等于100.0%。"""
+    if not pcts or sum(pcts) <= 0:
+        return [0.0 for _ in pcts]
     rounded = [round(p, 1) for p in pcts]
     diff = round(100.0 - sum(rounded), 1)
     if diff != 0.0:
@@ -85,7 +87,8 @@ def _render_layer1(flags: dict) -> str:
         "污泥运输": s["sludge_transport_pct"],
         "O3": s["o3_pct"],
     }
-    dominant_cn = max(component_pcts, key=component_pcts.get)
+    dominant_cn = max(component_pcts, key=component_pcts.get) if total_carbon > 0 else None
+    dominant_text = f"{dominant_cn}主导" if dominant_cn else "暂无主导来源"
 
     # M2：碳排强度日环比
     if not s["m2_available"]:
@@ -123,7 +126,7 @@ def _render_layer1(flags: dict) -> str:
 
     return (
         f"吨水碳排强度{intensity:.3f} kgCO₂e/m³，{trend}。"
-        f"全厂总碳排{total_carbon:.0f} kgCO₂e，{dominant_cn}主导（{structure_status}）。"
+        f"全厂总碳排{total_carbon:.0f} kgCO₂e，{dominant_text}（{structure_status}）。"
     )
 
 

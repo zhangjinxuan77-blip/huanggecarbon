@@ -7,6 +7,7 @@ POST /api/network/strategy
 """
 
 import os
+from pathlib import Path
 from typing import Dict, Any, List, Tuple
 
 import pandas as pd
@@ -20,19 +21,23 @@ BASE_DIR  = os.path.dirname(os.path.dirname(__file__))
 XLSX_PATH = os.path.join(BASE_DIR, "data", "管网碳排_按压力监测点_坐标匹配.xlsx")
 SHEET     = "Monthly_PressurePoint"   # 优化策略基于月度数据分析
 
-_CACHE: Dict[str, pd.DataFrame] = {}
+_CACHE: Dict[str, Tuple[int, pd.DataFrame]] = {}
 
 
 def _load() -> pd.DataFrame:
-    if SHEET in _CACHE:
-        return _CACHE[SHEET]
-    if not os.path.exists(XLSX_PATH):
+    path = Path(XLSX_PATH)
+    if not path.exists():
+        _CACHE.pop(SHEET, None)
         return pd.DataFrame()
     try:
-        df = pd.read_excel(XLSX_PATH, sheet_name=SHEET)
+        modified_ns = path.stat().st_mtime_ns
+        cached = _CACHE.get(SHEET)
+        if cached is not None and cached[0] == modified_ns:
+            return cached[1]
+        df = pd.read_excel(path, sheet_name=SHEET)
     except Exception as e:
         raise HTTPException(status_code=500, detail="读取管网数据失败") from e
-    _CACHE[SHEET] = df
+    _CACHE[SHEET] = (modified_ns, df)
     return df
 
 
@@ -45,10 +50,9 @@ def _latest_active(df: pd.DataFrame) -> pd.DataFrame:
     for c in ["CO2e_kg", "flow_m3_h", "pressure_m", "I_kg_m3"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
     df = df.dropna(subset=["period", "point"])
-    pos = df.loc[df["CO2e_kg"].fillna(0) > 0, "period"]
-    if pos.empty:
+    if df.empty:
         return df.iloc[0:0]
-    latest = df[df["period"] == pos.max()].copy()
+    latest = df[df["period"] == df["period"].max()].copy()
     latest = latest[latest["CO2e_kg"].fillna(0) > 0]
     for c in ["flow_m3_h", "pressure_m", "I_kg_m3"]:
         latest[c] = latest[c].fillna(0.0)

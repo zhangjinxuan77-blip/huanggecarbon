@@ -323,7 +323,7 @@ def evaluate(
     )
     if pac_baseline is None:
         pac_baseline = pac_monthly[month - 1] if len(pac_monthly) >= month else None
-    if pac_unit is not None and pac_baseline is not None:
+    if pac_unit is not None and pac_baseline is not None and pac_baseline > 0:
         l2_threshold = cfg.get("l2_pac_deviation_pct", 0.20)
         pac_deviation = (pac_unit - pac_baseline) / pac_baseline
         layer3_details["L2"] = {
@@ -351,7 +351,12 @@ def evaluate(
     )
     if naclo_baseline is None:
         naclo_baseline = naclo_monthly[month - 1] if len(naclo_monthly) >= month else None
-    if naclo_kg is not None and naclo_baseline is not None and water_volume > 0:
+    if (
+        naclo_kg is not None
+        and naclo_baseline is not None
+        and naclo_baseline > 0
+        and water_volume > 0
+    ):
         naclo_unit = naclo_kg / (water_volume / 1000.0)
         l3_threshold = cfg.get("l3_naclo_deviation_pct", 0.20)
         naclo_deviation = (naclo_unit - naclo_baseline) / naclo_baseline

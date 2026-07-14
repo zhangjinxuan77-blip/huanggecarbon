@@ -53,8 +53,21 @@ def _shared_periods(data_path: Path) -> tuple[str, str]:
     if not dates or not hours:
         raise HTTPException(status_code=500, detail="公共日报不含有效日期")
 
+    unique_hours = sorted(set(hours))
+    latest_window = unique_hours[-24:]
+    if len(latest_window) < 24 or any(
+        current - previous != timedelta(hours=1)
+        for previous, current in zip(latest_window, latest_window[1:])
+    ):
+        raise HTTPException(status_code=500, detail="公共滚动小时数据不足24条或时间不连续")
+
     latest_date = max(dates)
-    latest_hour = max(hours)
+    latest_hour = latest_window[-1]
+    if latest_date != latest_hour.date():
+        raise HTTPException(
+            status_code=500,
+            detail="公共日报与滚动小时数据的最新日期不一致",
+        )
     complete_ceiling = latest_hour.date()
     if latest_hour.hour < 23:
         complete_ceiling -= timedelta(days=1)

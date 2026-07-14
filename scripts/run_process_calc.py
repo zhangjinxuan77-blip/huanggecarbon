@@ -134,7 +134,9 @@ def _patched_code(input_file: Path, work_dir: Path, reuse_extracted: bool = Fals
         'input_file = "/content/drive/MyDrive/中台一年历史数据/20260511.csv"',
         f'input_file = r"{input_file}"',
     )
-    code = code.replace(COLAB_BASE, str(work_dir))
+    # 注入到源脚本的普通字符串中时统一使用正斜杠，避免Windows路径中的
+    # \n、\t等片段被Python解释成换行或制表符。
+    code = code.replace(COLAB_BASE, work_dir.as_posix())
     return code
 
 
